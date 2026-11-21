@@ -1,0 +1,46 @@
+name: Wrong or missing suggestions
+description: A command gets no suggestions, or the wrong ones
+labels: ["bug"]
+body:
+  - type: input
+    id: typed
+    attributes:
+      label: What you typed
+      description: The exact command line, up to the cursor
+      placeholder: git checkout fe
+    validations:
+      required: true
+  - type: textarea
+    id: complete-output
+    attributes:
+      label: Output of `hiruzen complete`
+      description: Run `hiruzen complete "<what you typed>"` and paste the result. Remove anything private, such as branch or file names you do not want public.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+      description: The suggestions that should have appeared
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: hiruzen version
+      description: Output of `hiruzen --version`
+    validations:
+      required: true
+  - type: input
+    id: tool-version
+    attributes:
+      label: Version of the tool being completed
+      description: For example the output of `git --version`
+  - type: input
+    id: environment
+    attributes:
+      label: Operating system and shell
+      placeholder: macOS 15, zsh
+    validations:
+      required: true
