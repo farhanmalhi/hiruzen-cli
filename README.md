@@ -446,8 +446,6 @@ What has been tested on each platform, and what has not, is in
 - Six tools in the library (`az`, `heroku`,
   `shopify`, `fig`, `infracost` and `@usermn/sdc`) build their whole spec in
   code at run time; hiruzen does not do that, so they have no spec.
-- In PowerShell, accepting a file name that contains a space inserts it in a
-  form PowerShell reads as two arguments. Type the quotes yourself for now.
 - Aliases are understood in zsh and bash, and functions in zsh, bash and
   fish. PowerShell aliases and functions are not reported yet.
 - Nushell, Xonsh and other shells not listed above are not supported.

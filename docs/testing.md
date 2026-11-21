@@ -10,11 +10,16 @@
 An automated suite of 71 edge cases runs the real shells on Linux: bad
 quotes, pasted text, tiny and resized windows, long wrapped commands, a
 deleted working directory, a broken or read-only settings folder, nested
-starts, hostile input and more, in bash, zsh, fish and PowerShell. Its first
-run passed 65. Of the six failures, four were bugs that are now fixed
-(mistyped commands still being suggested, and a file missed in a folder of
-5,000), one is the PowerShell limit listed under [Limits](../README.md#limits), and one
-was a fault in the test itself.
+starts, hostile input and more, in bash, zsh, fish and PowerShell.
+
+| Run | Passed | What failed |
+| --- | --- | --- |
+| First | 65 of 71 | Mistyped commands were still suggested (3 cases); a file was missed in a folder of 5,000; a command recorded in bash was misread in PowerShell; one case was a fault in the test |
+| After fixes | 70 of 71 | The bash-then-PowerShell case, whose fix was made after this run started |
+
+The remaining case came from hiruzen re-reading a command typed in bash by
+PowerShell's rules, where a backslash is an ordinary character. The record
+now notes which shell each command was typed in.
 
 hiruzen has also been run inside tmux on Linux, and `hiruzen ssh` against
 remote bash, zsh and fish on a local test server. It has not been tried over

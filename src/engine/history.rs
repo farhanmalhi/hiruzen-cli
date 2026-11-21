@@ -329,8 +329,10 @@ fn unix_time() -> u64 {
 
 impl ProjectHistory {
     /// Reads the record, oldest first. Each line is
-    /// `project<TAB>command<TAB>time<TAB>session<TAB>status`; lines written
-    /// by the first release hold only the first two fields.
+    /// `project<TAB>command<TAB>time<TAB>session<TAB>status<TAB>shell`;
+    /// older lines hold fewer fields. A command is split into words by the
+    /// rules of the shell it was typed in, which differ: a backslash escapes
+    /// a space in bash and is an ordinary character in PowerShell.
     pub fn load(file: PathBuf, shell: Shell) -> ProjectHistory {
         let text = std::fs::read(&file)
             .map(|raw| String::from_utf8_lossy(&raw).into_owned())
@@ -353,6 +355,7 @@ impl ProjectHistory {
             let _time = fields.next();
             let session = fields.next().unwrap_or("");
             let status = fields.next().and_then(|status| status.parse::<i32>().ok());
+            let typed_in = fields.next().and_then(Shell::from_name).unwrap_or(shell);
             note_outcome(&mut mistyped, &mut found, command, status);
             let Some(trust) = trust(status) else { continue };
             let project = PathBuf::from(project);
@@ -365,7 +368,7 @@ impl ProjectHistory {
             sessions.insert(project, session.to_string());
             // Older entries count for less: weights run from 0.25 up to 1.
             let recency = 0.25 + 0.75 * (i + 1) as f64 / total as f64;
-            history.add(command, shell, recency * trust);
+            history.add(command, typed_in, recency * trust);
         }
         for history in projects.values_mut() {
             history.last = None;
@@ -418,12 +421,13 @@ impl ProjectHistory {
             let status = status.map(|status| status.to_string()).unwrap_or_default();
             let _ = writeln!(
                 handle,
-                "{}\t{}\t{}\t{}\t{}",
+                "{}\t{}\t{}\t{}\t{}\t{}",
                 project.display(),
                 command,
                 unix_time(),
                 self.session,
-                status
+                status,
+                shell.name()
             );
         }
     }
@@ -628,7 +632,27 @@ mod tests {
         let text = std::fs::read_to_string(&file).unwrap();
         let last: Vec<&str> = text.lines().last().unwrap().split('\t').collect();
         assert_eq!((last[0], last[1], last[4]), ("/p", "make test", "1"));
-        assert_eq!(last.len(), 5);
+        assert_eq!((last.len(), last[5]), (6, "zsh"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_command_is_read_by_the_rules_of_the_shell_it_was_typed_in() {
+        let dir = std::env::temp_dir().join(format!("hiruzen-shells-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("history.tsv");
+        // Typed in bash, where the backslash joins the two words into one.
+        std::fs::write(&file, "/p\tcat my\\ file.txt\t1\ts\t0\tbash\n").unwrap();
+        let record = ProjectHistory::load(file, Shell::Pwsh);
+        let followers: Vec<&str> = record
+            .get(Path::new("/p"))
+            .unwrap()
+            .followers(&["cat"])
+            .into_iter()
+            .map(|f| f.0)
+            .collect();
+        assert_eq!(followers, vec!["my file.txt"]);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

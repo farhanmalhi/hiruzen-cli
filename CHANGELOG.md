@@ -58,6 +58,18 @@ All notable changes to hiruzen are recorded here. The format follows
   runs the command as typed. Set `autocomplete.enterAccepts` to `false` for
   the old behaviour.
 
+### Fixed
+
+- A command the shell could not find is no longer suggested just because the
+  shell's own history file kept it.
+- In a folder with thousands of files, the file being typed is no longer
+  dropped from the suggestions.
+- A command typed in one shell is no longer misread when you use a different
+  shell in the same project.
+- New fish shells now start hiruzen after `hiruzen install`.
+- `cargo add` and other specs that query a web service now get results when
+  online suggestions are on.
+
 ## [0.1.0] - 2026-11-21
 
 The first release. hiruzen shows a dropdown of what the next word of your
