@@ -51,8 +51,13 @@ class Term:
         try: os.waitpid(self.pid, 0)
         except OSError: pass
 
+# EDGE_ONLY=text runs only the cases whose name contains the text.
+ONLY = os.environ.get("EDGE_ONLY", "")
+
 def case(name):
     def wrap(fn):
+        if ONLY and ONLY not in name:
+            return
         try:
             detail = fn()
             results.append((name, detail is None or detail is True, "" if detail in (None, True) else str(detail)))
@@ -304,20 +309,31 @@ def _():
     cfg = "/tmp/cfg-picks"; env = {"HIRUZEN_CONFIG_DIR": cfg}
     t = Term([H, "--shell", "bash"], env=env)
     try:
-        for _ in range(4):
+        for round_number in range(4):
             t.type("git ch", 0.6)
             # Wait for the dropdown: a key sent before it shows goes to the shell.
             for _ in range(20):
                 if "cherry-pick" in t.text(): break
                 t.pump(0.2)
             expect("cherry-pick" in t.text(), "no dropdown to pick from")
-            t.send("\x1b[B", 0.4); t.send("\t", 0.6)
-            expect("git cherry-pick" in t.text(), "the second suggestion was not inserted:\n" + t.text()[-200:])
+            # Pick by name, not by position: the position changes as hiruzen
+            # learns. The highlighted row carries the accept-key symbol.
+            def highlighted():
+                current = t.text().split("git ch")[-1]
+                return any(mark in current for mark in ("cherry-pick ⇥", "cherry-pick ↵"))
+            for _ in range(6):
+                if highlighted(): break
+                t.send("\x1b[B", 0.4)
+            expect(highlighted(), f"could not highlight cherry-pick in round {round_number}:\n" + t.text()[-300:])
+            t.send("\t", 0.6)
             t.send("\x03", 0.6)
     finally: t.close()
-    expect(open(cfg + "/picks.tsv").read().count("cherry-pick") >= 4, "the picks were not recorded")
+    picked = [line.split("\t")[2] for line in open(cfg + "/picks.tsv").read().splitlines() if line.count("\t") >= 2]
+    expect(picked == ["cherry-pick"] * 4, f"expected four picks of cherry-pick, recorded {picked}")
     out = subprocess.run([H, "complete", "git ch"], capture_output=True, text=True, cwd="/proj", env={**os.environ, **env}).stdout
-    expect(out.splitlines()[0].startswith("cherry-pick"), "the picked suggestion is not first:\n" + out[:200])
+    record = cfg + "/history.tsv"
+    detail = "\npicks:\n" + open(cfg + "/picks.tsv").read() + "\nrecord:\n" + (open(record).read() if os.path.exists(record) else "(none)")
+    expect(out.splitlines()[0].startswith("cherry-pick"), "the picked suggestion is not first:\n" + out[:200] + detail)
 
 @case("learn: a tool with no spec gets suggestions from its --help")
 def _():

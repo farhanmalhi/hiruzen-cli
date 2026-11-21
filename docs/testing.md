@@ -8,7 +8,7 @@
 | Windows 11 (x64) | Windows PowerShell 5.1, cmd | Tested in live sessions |
 | Windows | PowerShell 7, Git Bash | Not tested in a live session; builds and passes the unit tests in CI on Windows |
 
-An automated suite of 71 edge cases runs the real shells on Linux: bad
+An automated suite of 77 edge cases runs the real shells on Linux: bad
 quotes, pasted text, tiny and resized windows, long wrapped commands, a
 deleted working directory, a broken or read-only settings folder, nested
 starts, hostile input and more, in bash, zsh, fish and PowerShell.
@@ -18,6 +18,8 @@ starts, hostile input and more, in bash, zsh, fish and PowerShell.
 | First | 65 of 71 | Mistyped commands were still suggested (3 cases); a file was missed in a folder of 5,000; a command recorded in bash was misread in PowerShell; one case was a fault in the test |
 | After fixes | 70 of 71 | The bash-then-PowerShell case, whose fix was made after this run started |
 | After that fix | 71 of 71 | Nothing |
+| With six cases added for 0.2.0 | 75 of 77 | `hiruzen learn` nested a tool's commands inside each other when the tool printed the same help for every subcommand (fixed); the test for learning from picks chose by position, which the learning itself changes |
+| Before the 0.2.0 release | 76 of 77, and the last case on its own | Nothing in hiruzen. The picks test was corrected to choose by name and passes when run by itself; the full suite has not yet been re-run with it |
 
 The last case to be fixed came from hiruzen re-reading a command typed in bash by
 PowerShell's rules, where a backslash is an ordinary character. The record
