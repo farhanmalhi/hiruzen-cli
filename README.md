@@ -24,6 +24,7 @@ $ git ch
 
 - [Install](#install)
 - [Usage](#usage)
+- [Settings](#settings)
 - [How it works](#how-it-works)
 - [Shell support](#shell-support)
 - [Privacy and security](#privacy-and-security)
@@ -59,7 +60,17 @@ on and changes no files. Type `exit` to leave.
 
 ### 3. Start it with every new terminal
 
-Add one line to the **end** of your shell's startup file:
+Run:
+
+```sh
+hiruzen install
+```
+
+This adds hiruzen to the startup file of every supported shell it finds; name
+shells to limit it (`hiruzen install zsh`). Open a new terminal afterwards.
+
+To do it by hand instead, add one line to the **end** of your shell's startup
+file:
 
 | Shell | File | Line to add |
 | --- | --- | --- |
@@ -100,10 +111,25 @@ rest. It opens below the cursor, or above it when there is no room below.
 
 ```
 hiruzen [OPTIONS]              Start your shell with suggestions
-hiruzen init <SHELL>           Print the line that starts hiruzen with each new terminal
+hiruzen install [SHELL...]     Add hiruzen to your shell's startup file
+hiruzen uninstall [SHELL...]   Remove it again
+hiruzen integrations status    Show which shells start hiruzen
+hiruzen init <SHELL>           Print the startup line, to add it by hand
+hiruzen settings [KEY [VALUE]] List, read or change settings
+hiruzen theme [NAME | --list]  Show or change the dropdown's colours
+hiruzen doctor                 Check that hiruzen is set up correctly
+hiruzen issue [TITLE]          Open a new issue with your system details filled in
 hiruzen complete <COMMAND>     Print the suggestions for a partly typed command
 hiruzen --help | --version
 ```
+
+`hiruzen install` with no shell named acts on every supported shell it finds.
+It adds a marked block to the startup file (`~/.zshrc`, `~/.bashrc`, your
+PowerShell profile, or its own file in fish's `conf.d`), and `uninstall`
+removes exactly that block. `hiruzen doctor` checks the installation, the
+settings file, each shell and the current terminal, and says how to fix what
+it finds. `hiruzen issue` opens a GitHub issue form in your browser; nothing
+is sent until you submit it.
 
 | Option | Meaning |
 | --- | --- |
@@ -134,6 +160,35 @@ complete at that position.
 
 Inside a session the environment variable `HIRUZEN` is set to `1`. Your own
 startup scripts can test it.
+
+## Settings
+
+Settings live in one JSON file: `~/.config/hiruzen/settings.json` on macOS and
+Linux (or under `$XDG_CONFIG_HOME`), `%APPDATA%\hiruzen\settings.json` on
+Windows. Change them with `hiruzen settings`; a running session picks up the
+change at its next prompt.
+
+```sh
+hiruzen settings                              # list every setting and its value
+hiruzen settings docs                         # describe every setting
+hiruzen settings autocomplete.height 12       # change one
+hiruzen settings --delete autocomplete.height # back to the default
+hiruzen settings open                         # open the file in your editor
+```
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `autocomplete.disable` | `false` | Turn suggestions off without removing hiruzen from your shell |
+| `autocomplete.theme` | `dark` | Colours of the dropdown: `dark`, `light`, `dracula`, `nord`, `gruvbox`, `solarized` |
+| `autocomplete.height` | `8` | Most suggestions shown at once, from 1 to 20 |
+| `autocomplete.descriptions` | `true` | Show each suggestion's description beside it |
+| `autocomplete.fuzzySearch` | `true` | Match anywhere in a suggestion, not only at its start |
+| `autocomplete.history` | `true` | Rank and suggest using your shell history |
+| `autocomplete.disableForCommands` | none | Commands that get no suggestions, for example `ssh,mysql` |
+| `autocomplete.enterAccepts` | `false` | Enter inserts the highlighted suggestion once you have moved the highlight |
+
+`hiruzen theme --list` previews every theme, and `hiruzen theme nord` selects
+one.
 
 ## How it works
 
@@ -231,8 +286,7 @@ used in a real Windows terminal, treat Windows support as experimental.
   hiruzen stays offline. Six tools in the library (`az`, `heroku`,
   `shopify`, `fig`, `infracost` and `@usermn/sdc`) build their whole spec in
   code at run time; hiruzen does not do that, so they have no spec.
-- Colours, keys and the number of rows shown are fixed. There is no
-  configuration file.
+- The keys are fixed; they cannot be rebound yet.
 - Nushell, Xonsh and other shells not listed above are not supported.
 
 ## Troubleshooting
@@ -250,10 +304,11 @@ used in a real Windows terminal, treat Windows support as experimental.
 
 ## Uninstall
 
-1. Remove the `hiruzen init` line from your shell's startup file.
+1. Run `hiruzen uninstall`. If you added the `hiruzen init` line by hand,
+   remove that line yourself.
 2. Open a new terminal, then run `cargo uninstall hiruzen-cli`.
-
-hiruzen leaves no configuration or data files behind.
+3. Delete the settings directory if you changed any settings
+   (`~/.config/hiruzen`, or `%APPDATA%\hiruzen` on Windows).
 
 ## Development
 
@@ -301,7 +356,8 @@ every spec in the new archive still parses.
 hiruzen does one thing: autocomplete. It reuses the spec library from Fig
 (later Amazon Q Developer CLI) but is not a replacement for the rest of that
 product. It has no dotfile sync, scripts, plugin store, AI command
-generation, settings app, themes or team features.
+generation, accounts or team features. Settings, themes, a doctor and
+shell integration management are built in, and work locally.
 
 ## Licence
 

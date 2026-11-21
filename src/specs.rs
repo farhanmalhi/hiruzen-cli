@@ -11,6 +11,8 @@ use serde::Deserialize;
 
 static ARCHIVE: &[u8] = include_bytes!("../specs/specs.bin");
 const MAGIC: &[u8] = b"HZSP1\0";
+/// hiruzen's own spec, written by hand; the Fig library has none for it.
+const OWN_SPEC: &str = include_str!("../specs/hiruzen.json");
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -417,7 +419,9 @@ impl SpecStore {
         if let Some(hit) = self.cache.lock().ok()?.get(key) {
             return hit.clone();
         }
-        let parsed = if self.contains(key) {
+        let parsed = if key == "hiruzen" {
+            serde_json::from_str::<Subcommand>(OWN_SPEC).ok().map(Arc::new)
+        } else if self.contains(key) {
             self.raw(key)
                 .and_then(|raw| serde_json::from_slice::<Subcommand>(&raw).ok())
                 .map(Arc::new)
@@ -470,6 +474,26 @@ mod tests {
         );
         let failed: Vec<&str> = keys.iter().copied().filter(|key| store.load(key).is_none()).collect();
         assert!(failed.is_empty(), "specs failed to parse: {failed:?}");
+    }
+
+    #[test]
+    fn hiruzen_has_its_own_spec_covering_every_setting() {
+        let spec = SpecStore::embedded().load("hiruzen").expect("hiruzen spec");
+        let settings = spec
+            .subcommands
+            .iter()
+            .find(|s| s.name[0] == "settings")
+            .expect("settings");
+        let offered: Vec<&str> = settings.args[0]
+            .suggestions
+            .iter()
+            .map(|s| s.name[0].as_str())
+            .collect();
+        let defined: Vec<&str> = crate::settings::DEFINITIONS.iter().map(|d| d.key).collect();
+        assert_eq!(offered, defined);
+        let theme = spec.subcommands.iter().find(|s| s.name[0] == "theme").expect("theme");
+        let themes: Vec<&str> = theme.args[0].suggestions.iter().map(|s| s.name[0].as_str()).collect();
+        assert_eq!(themes, crate::settings::THEME_NAMES);
     }
 
     #[test]
