@@ -210,9 +210,17 @@ impl Learner<'_> {
         }
     }
 
-    fn build(&mut self, argv: &[String], description: &str, depth: usize) -> Value {
+    fn build(&mut self, argv: &[String], description: &str, depth: usize, parent_help: &str) -> Value {
         let text = self.help(argv);
-        let found = sections(&text);
+        // A tool that ignores the subcommand prints its top-level help again.
+        // Reading that as the subcommand's own would nest the whole tool
+        // inside each of its commands.
+        let found = if text.trim() == parent_help.trim() {
+            HashMap::new()
+        } else {
+            sections(&text)
+        };
+        let text_of_parent = text.clone();
         let mut spec = json!({ "name": argv.last().cloned().unwrap_or_default(), "description": shorten(description) });
         let mut options: Vec<Value> = Vec::new();
         let mut subcommands: Vec<Value> = Vec::new();
@@ -238,7 +246,7 @@ impl Learner<'_> {
                     let mut sub = if depth < MAX_DEPTH {
                         let mut deeper = argv.to_vec();
                         deeper.push(name.to_string());
-                        self.build(&deeper, text, depth + 1)
+                        self.build(&deeper, text, depth + 1, &text_of_parent)
                     } else {
                         json!({ "description": shorten(text) })
                     };
@@ -268,7 +276,7 @@ impl Learner<'_> {
 /// Builds a spec for `command` by reading its help.
 pub fn build_spec(command: &str, runner: &dyn Runner, cwd: &Path) -> Option<Value> {
     let mut learner = Learner { runner, cwd, runs: 0 };
-    let spec = learner.build(&[command.to_string()], "", 0);
+    let spec = learner.build(&[command.to_string()], "", 0, "");
     (spec.get("options").is_some() || spec.get("subcommands").is_some()).then_some(spec)
 }
 
@@ -385,6 +393,27 @@ mod tests {
         assert_eq!(options[2]["name"], json!(["-o", "--output"]));
         assert_eq!(options[2]["args"]["name"], "file");
         assert_eq!(options[2]["description"], "Where to write the result");
+    }
+
+    #[test]
+    fn a_tool_that_repeats_its_help_for_subcommands_is_not_nested_in_itself() {
+        struct Same;
+        impl Runner for Same {
+            fn run(&self, _argv: &[String], _cwd: &Path) -> Option<String> {
+                None
+            }
+            fn exec(&self, _argv: &[String], _cwd: &Path, _env: &[(String, Option<String>)]) -> Output {
+                Output {
+                    stdout:
+                        "Commands:\n  launch  Launch it\n  status  Show status\n\nOptions:\n  -q, --quiet  Say less\n"
+                            .to_string(),
+                    ..Output::default()
+                }
+            }
+        }
+        let spec = build_spec("same", &Same, Path::new(".")).unwrap();
+        assert_eq!(count(&spec, "subcommands"), 2);
+        assert_eq!(count(&spec, "options"), 1);
     }
 
     #[test]
