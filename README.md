@@ -420,6 +420,10 @@ commands, plus separate specs for the services of large tools such as `aws`,
 | macOS | fish, PowerShell 7 | Not tested; the same scripts pass on Linux |
 | Windows | PowerShell 7, Windows PowerShell 5, Git Bash, cmd | Builds and passes the unit tests in CI on Windows; the dropdown has not yet been tried in a live Windows terminal |
 
+hiruzen has also been run inside tmux on Linux, and `hiruzen ssh` against
+remote bash, zsh and fish on a local test server. It has not been tried over
+SSH to a real server or through a jump host.
+
 The unit tests pass on macOS, Linux and Windows. Until the dropdown has been
 used in a real Windows terminal, treat Windows support as experimental.
 
@@ -432,6 +436,10 @@ used in a real Windows terminal, treat Windows support as experimental.
   registry or search service. Turning on `autocomplete.onlineSuggestions`
   allows them: `npm install reac` then searches the npm registry, which
   means the word you are typing is sent to that service.
+- When online suggestions are on, hiruzen adds a User-Agent of
+  `hiruzen/<version>` and its repository address to the `curl` calls specs
+  make, unless the spec sets its own. Some services, crates.io among them,
+  refuse requests that do not say who is asking.
 - A tool's own listing command is always allowed, and may contact that
   tool's service: `gh` asks GitHub for your repositories, `kubectl` asks your
   cluster. hiruzen cannot tell which tools do this.
@@ -486,6 +494,7 @@ used in a real Windows terminal, treat Windows support as experimental.
 | `hiruzen: Git Bash was not found` | Install [Git for Windows](https://gitforwindows.org), or choose another shell with `--shell`. |
 | `hiruzen: <shell> was not found on PATH` | Install that shell, or name one you have with `--shell`. |
 | A tool gives no suggestions, or wrong ones | Run `hiruzen complete "<what you typed>"` to see what hiruzen offers. Include that output when you report the problem. |
+| A tool's live values are missing (branches, packages, resources) | Run the same `hiruzen complete` with `HIRUZEN_DEBUG=1` set. It prints each command the spec ran, with its exit status, and the error if the spec's own code failed. |
 | You need a shell without hiruzen | Start one with the variable set, for example `HIRUZEN=1 zsh`. The `init` line then skips hiruzen. |
 
 ## Uninstall

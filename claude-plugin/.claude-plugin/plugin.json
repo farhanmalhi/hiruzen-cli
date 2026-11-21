@@ -2,8 +2,16 @@
   "name": "hiruzen",
   "version": "0.1.0",
   "description": "Look up the valid subcommands, options and arguments of command-line tools offline, using the hiruzen CLI",
-  "author": { "name": "The hiruzen authors" },
+  "author": {
+    "name": "The hiruzen authors"
+  },
+  "homepage": "https://www.hiruzen.farhanmalhi.com/",
   "repository": "https://github.com/farhanmalhi/hiruzen-cli",
   "license": "MIT",
-  "keywords": ["cli", "shell", "autocomplete", "terminal"]
+  "keywords": [
+    "cli",
+    "shell",
+    "autocomplete",
+    "terminal"
+  ]
 }
