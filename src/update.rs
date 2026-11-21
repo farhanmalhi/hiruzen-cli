@@ -216,10 +216,7 @@ fn install(method: &Method, tag: &str) -> Result<(), String> {
     let outcome = Command::new(&command[0]).args(&command[1..]).status();
     let result = match outcome {
         Ok(status) if status.success() => Ok(()),
-        Ok(_) => Err(format!(
-            "the update did not finish; to try again, run: {}",
-            shown(&command)
-        )),
+        Ok(_) => Err("the update did not finish; run `hiruzen update` to try again".to_string()),
         Err(_) => Err(format!(
             "{} is needed to update; see {REPOSITORY}/releases/latest",
             command[0]
