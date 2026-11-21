@@ -1,6 +1,6 @@
 {
   "name": "hiruzen",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Look up the valid subcommands, options and arguments of command-line tools offline, using the hiruzen CLI",
   "author": {
     "name": "The hiruzen authors"
