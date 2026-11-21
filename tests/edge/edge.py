@@ -305,8 +305,17 @@ def _():
     t = Term([H, "--shell", "bash"], env=env)
     try:
         for _ in range(4):
-            t.type("git ch", 0.6); t.send("\x1b[B", 0.3); t.send("\t", 0.5); t.send("\x03", 0.5)
+            t.type("git ch", 0.6)
+            # Wait for the dropdown: a key sent before it shows goes to the shell.
+            for _ in range(20):
+                if "cherry-pick" in t.text(): break
+                t.pump(0.2)
+            expect("cherry-pick" in t.text(), "no dropdown to pick from")
+            t.send("\x1b[B", 0.4); t.send("\t", 0.6)
+            expect("git cherry-pick" in t.text(), "the second suggestion was not inserted:\n" + t.text()[-200:])
+            t.send("\x03", 0.6)
     finally: t.close()
+    expect(open(cfg + "/picks.tsv").read().count("cherry-pick") >= 4, "the picks were not recorded")
     out = subprocess.run([H, "complete", "git ch"], capture_output=True, text=True, cwd="/proj", env={**os.environ, **env}).stdout
     expect(out.splitlines()[0].startswith("cherry-pick"), "the picked suggestion is not first:\n" + out[:200])
 
