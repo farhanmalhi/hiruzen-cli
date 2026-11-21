@@ -1,6 +1,7 @@
-# hiruzen
+# hiruzen-cli
 
-Dropdown autocomplete for your terminal. As you type a command, hiruzen shows
+Dropdown autocomplete for your terminal. The command it installs is `hiruzen`.
+As you type a command, hiruzen shows
 what the next word can be (subcommands, options, branches, files, scripts),
 so you do not have to remember it.
 
@@ -235,7 +236,7 @@ commands, plus separate specs for the services of large tools such as `aws`,
 ## Uninstall
 
 1. Remove the `hiruzen init` line from your shell's startup file.
-2. Open a new terminal, then run `cargo uninstall hiruzen`.
+2. Open a new terminal, then run `cargo uninstall hiruzen-cli`.
 
 hiruzen leaves no configuration or data files behind.
 
