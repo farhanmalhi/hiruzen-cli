@@ -1,0 +1,12 @@
+{
+  "name": "hiruzen-specgen",
+  "private": true,
+  "type": "module",
+  "description": "Converts the Fig completion spec library into the JSON archive embedded in hiruzen",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "@withfig/autocomplete": "2.675.0"
+  }
+}

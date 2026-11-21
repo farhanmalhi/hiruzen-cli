@@ -1,0 +1,32 @@
+[package]
+name = "hiruzen"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.91"
+description = "Dropdown autocomplete for your terminal: suggests the next word as you type, on Windows, Linux and macOS"
+keywords = ["autocomplete", "terminal", "shell", "cli", "completion"]
+categories = ["command-line-utilities"]
+exclude = ["tools/", ".github/"]
+
+[[bin]]
+name = "hiruzen"
+path = "src/main.rs"
+
+[dependencies]
+boa_engine = { version = "0.22", default-features = false }
+crossterm = { version = "0.29", default-features = false, features = ["windows"] }
+portable-pty = "0.9"
+ruzstd = "0.9"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+unicode-width = "0.2"
+vt100 = "0.18"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Console"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
