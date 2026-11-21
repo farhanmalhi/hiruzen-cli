@@ -133,6 +133,12 @@ pub const DEFINITIONS: &[Definition] = &[
         default: "80",
         help: "Longest branch name the prompt shows; a narrow window shortens it sooner",
     },
+    Definition {
+        key: "updates.check",
+        kind: ValueKind::Bool,
+        default: "true",
+        help: "Look for a new version once a day and offer to install it when a terminal starts",
+    },
 ];
 
 pub fn definition(key: &str) -> Option<&'static Definition> {
@@ -235,6 +241,7 @@ pub struct Settings {
     pub prompt_host: bool,
     pub prompt_directory_length: usize,
     pub prompt_branch_length: usize,
+    pub update_check: bool,
 }
 
 /// The byte sequences bound to each dropdown action.
@@ -300,6 +307,7 @@ impl Settings {
             prompt_host: value("prompt.showHost").as_bool().unwrap_or(false),
             prompt_directory_length: value("prompt.directoryLength").as_u64().unwrap_or(24) as usize,
             prompt_branch_length: value("prompt.branchLength").as_u64().unwrap_or(80) as usize,
+            update_check: value("updates.check").as_bool().unwrap_or(true),
         }
     }
 

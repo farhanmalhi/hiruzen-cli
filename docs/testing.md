@@ -16,8 +16,9 @@ starts, hostile input and more, in bash, zsh, fish and PowerShell.
 | --- | --- | --- |
 | First | 65 of 71 | Mistyped commands were still suggested (3 cases); a file was missed in a folder of 5,000; a command recorded in bash was misread in PowerShell; one case was a fault in the test |
 | After fixes | 70 of 71 | The bash-then-PowerShell case, whose fix was made after this run started |
+| After that fix | 71 of 71 | Nothing |
 
-The remaining case came from hiruzen re-reading a command typed in bash by
+The last case to be fixed came from hiruzen re-reading a command typed in bash by
 PowerShell's rules, where a backslash is an ordinary character. The record
 now notes which shell each command was typed in.
 
@@ -27,3 +28,26 @@ SSH to a real server or through a jump host.
 
 The unit tests pass on macOS, Linux and Windows. Until the dropdown has been
 used in a real Windows terminal, treat Windows support as experimental.
+
+## Start-up time
+
+Time from starting a shell to its first prompt, on an Apple silicon Mac with
+a minimal shell configuration (median of five runs):
+
+| Shell | Without hiruzen | With hiruzen |
+| --- | --- | --- |
+| zsh | 16 ms | 25 ms |
+| bash | 10 ms | 26 ms |
+
+A real configuration with a prompt theme and plugins takes far longer than
+either figure, and hiruzen's share stays about the same.
+
+## Running the edge-case suite
+
+`tests/edge/run.sh` builds hiruzen, installs the shells and runs every case.
+It is meant for a throwaway machine, and CI runs it in a container on each
+push:
+
+```sh
+docker run --rm -v "$PWD":/src:ro rust:1-slim-bookworm bash /src/tests/edge/run.sh
+```

@@ -413,6 +413,11 @@ impl SpecStore {
         key != "__index__" && !key.starts_with("js/") && self.entries.contains_key(key)
     }
 
+    /// True for a command hiruzen ships a spec for.
+    pub fn has_builtin(&self, key: &str) -> bool {
+        self.contains(key) || EXTRA_SPECS.iter().any(|(name, _)| *name == key)
+    }
+
     /// The JavaScript module of a spec, for specs that compute suggestions in code.
     pub fn module(&self, key: &str) -> Option<String> {
         String::from_utf8(self.raw(&format!("js/{key}"))?).ok()
@@ -430,7 +435,9 @@ impl SpecStore {
                 .and_then(|raw| serde_json::from_slice::<Subcommand>(&raw).ok())
                 .map(Arc::new)
         } else {
-            None
+            // A spec the user built with `hiruzen learn`. It is read each
+            // time, so one learned while a session is open is picked up.
+            return learned(key);
         };
         if let Ok(mut cache) = self.cache.lock() {
             cache.insert(key.to_string(), parsed.clone());
@@ -470,6 +477,17 @@ impl SpecStore {
     pub fn keys(&self) -> Vec<&'static str> {
         self.entries.keys().copied().filter(|k| self.contains(k)).collect()
     }
+}
+
+/// A spec built by `hiruzen learn`, if there is one for this command.
+fn learned(key: &str) -> Option<Arc<Subcommand>> {
+    // A key is a command name; anything path-like is not looked up on disk.
+    if key.is_empty() || key.starts_with('.') || key.contains(['/', '\\']) {
+        return None;
+    }
+    let path = crate::learn::specs_dir()?.join(format!("{key}.json"));
+    let raw = std::fs::read(path).ok()?;
+    serde_json::from_slice::<Subcommand>(&raw).ok().map(Arc::new)
 }
 
 fn read_u32(data: &[u8], pos: usize) -> u32 {

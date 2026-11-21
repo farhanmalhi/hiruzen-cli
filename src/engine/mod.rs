@@ -9,6 +9,8 @@
 pub mod generators;
 pub mod history;
 mod js;
+mod picks;
+mod redact;
 pub mod tokenizer;
 
 use std::collections::{HashMap, HashSet};
@@ -197,6 +199,8 @@ pub struct Engine {
     history: RwLock<History>,
     /// hiruzen's own record of what was run in each project.
     projects: RwLock<ProjectHistory>,
+    /// Which suggestions the user takes and which they pass over.
+    picks: RwLock<picks::Picks>,
     /// Aliases and functions the user's shell reported.
     shell_names: RwLock<ShellNames>,
     options: RwLock<Options>,
@@ -250,6 +254,7 @@ impl Engine {
             generators,
             history: RwLock::new(history),
             projects: RwLock::new(ProjectHistory::default()),
+            picks: RwLock::new(picks::Picks::default()),
             shell_names: RwLock::new(ShellNames::default()),
             options: RwLock::new(Options::default()),
             path_commands: OnceLock::new(),
@@ -267,7 +272,26 @@ impl Engine {
         let history = History::load_without(shell, projects.mistyped());
         let mut engine = Self::new(shell, history, Generators::system());
         engine.projects = RwLock::new(projects);
+        if let Some(dir) = crate::settings::config_dir() {
+            engine.picks = RwLock::new(picks::Picks::load(dir.join("picks.tsv")));
+        }
         engine
+    }
+
+    /// Notes that the user accepted `picked` while typing `line` in `cwd`,
+    /// with `passed` listed above it.
+    pub fn note_pick(&self, line: &str, cwd: Option<&Path>, picked: &str, passed: &[&str]) {
+        if !self.options().history {
+            return;
+        }
+        let done = tokenizer::parse(line, self.shell).done;
+        let context: Vec<&str> = done.iter().map(|t| t.text.as_str()).collect();
+        let project = cwd
+            .map(|cwd| history::project_root(cwd).to_string_lossy().into_owned())
+            .unwrap_or_default();
+        if let Ok(mut picks) = self.picks.write() {
+            picks.note(&picks::place(&project, &context), picked, passed);
+        }
     }
 
     pub fn add_alias(&self, name: String, value: String) {
@@ -300,6 +324,8 @@ impl Engine {
         if !self.options().history {
             return;
         }
+        // What is remembered never holds a password or token typed as an argument.
+        let command = &redact::redact(command);
         if let Ok(mut history) = self.history.write() {
             history.record(command, self.shell, status);
         }
@@ -449,6 +475,19 @@ impl Engine {
             !matches!(c.kind, Kind::Arg | Kind::File) || !context.get(1..).unwrap_or(&[]).contains(&c.name.as_str())
         });
 
+        if options.history {
+            if let Ok(picks) = self.picks.read() {
+                // Keyed by the words as typed, so it matches what `note_pick` saw.
+                let typed = tokenizer::parse(line, self.shell).done;
+                let typed: Vec<&str> = typed.iter().map(|t| t.text.as_str()).collect();
+                let project = if remote {
+                    String::new()
+                } else {
+                    history::project_root(cwd).to_string_lossy().into_owned()
+                };
+                picks.adjust(&picks::place(&project, &typed), &mut items);
+            }
+        }
         let items = rank(items, &active.text, &context, history, &options);
         // The hint names the argument expected next; once the user is typing
         // it, a box that only repeats the argument's name is noise.
@@ -1143,6 +1182,20 @@ mod tests {
         // Not on another machine, where they do not exist.
         let remote = engine.complete_at("gco ", &std::env::temp_dir(), true);
         assert!(remote.is_none_or(|c| !c.items.iter().any(|i| i.name == "main")));
+    }
+
+    #[test]
+    fn learns_from_the_suggestion_the_user_keeps_picking() {
+        let engine = engine(&[]);
+        let cwd = std::env::temp_dir();
+        let before = names(&engine, "git ch");
+        assert_eq!(before[0], "checkout");
+        for _ in 0..4 {
+            engine.note_pick("git ch", Some(&cwd), "cherry-pick", &["checkout"]);
+        }
+        assert_eq!(names(&engine, "git ch")[0], "cherry-pick");
+        // Elsewhere in the command line nothing has changed.
+        assert_eq!(names(&engine, "sudo git ch")[0], "checkout");
     }
 
     #[test]

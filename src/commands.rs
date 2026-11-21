@@ -566,6 +566,31 @@ pub fn issue(args: &[String]) -> Result<i32, String> {
     Ok(0)
 }
 
+// --- tips -------------------------------------------------------
+
+/// `hiruzen tips`
+pub fn tips() -> Result<i32, String> {
+    const TIPS: &[&str] = &[
+        "Tab inserts the highlighted suggestion. After you move the highlight with Up or Down, Enter inserts it too.",
+        "Esc hides the dropdown for the word you are typing.",
+        "Up on the first suggestion goes to your shell history as usual.",
+        "A command typed with a space in front is not remembered.",
+        "`hiruzen learn <command>` teaches hiruzen a tool it has no suggestions for, by reading its --help.",
+        "`hiruzen ssh host` keeps suggestions working in a remote shell, with nothing installed there.",
+        "`hiruzen theme --list` previews the colour themes; `hiruzen theme nord` picks one.",
+        "`hiruzen settings keys.accept \"tab,ctrl+y\"` changes which keys accept a suggestion.",
+        "`hiruzen settings autocomplete.disableForCommands ssh,mysql` turns suggestions off for chosen commands.",
+        "`hiruzen run` lists your saved scripts; `hiruzen scripts new name` creates one.",
+        "`hiruzen evaluate` measures how often the right word was suggested, using your own history.",
+        "`hiruzen doctor` checks your setup and says how to fix what it finds.",
+        "With `HIRUZEN_DEBUG=1`, `hiruzen complete \"...\"` shows which commands a tool's spec ran.",
+    ];
+    for tip in TIPS {
+        println!("- {tip}");
+    }
+    Ok(0)
+}
+
 // --- evaluate ------------------------------------------------------------------
 
 /// Answers no commands, so an evaluation measures specs and history alone and

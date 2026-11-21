@@ -75,6 +75,31 @@ impl Screen {
         }
     }
 
+    /// An anchor at a known position, for when the shell redraws the prompt
+    /// somewhere else without saying so (after clearing the screen).
+    pub fn anchor_at(&self, row: u16, col: u16) -> Anchor {
+        Anchor {
+            row,
+            col,
+            scrolled: self.parser.screen().scrollback_len(),
+        }
+    }
+
+    /// True when the cursor sits on a character the user typed, which means
+    /// it is inside a word, not at the end of one. Greyed-out text after the
+    /// cursor is a shell's own inline suggestion and does not count.
+    pub fn cursor_on_text(&self) -> bool {
+        let (row, col) = self.cursor();
+        let Some(cell) = self.parser.screen().cell(row, col) else {
+            return false;
+        };
+        if !cell.has_contents() || cell.contents().trim().is_empty() {
+            return false;
+        }
+        let greyed = cell.dim() || matches!(cell.fgcolor(), vt100::Color::Idx(8) | vt100::Color::Idx(232..=250));
+        !greyed
+    }
+
     /// The row an anchor is on now, or `None` once it has scrolled off the
     /// top or the scrollback it was counted against has been cleared.
     pub fn anchor_row(&self, anchor: &Anchor) -> Option<u16> {
@@ -255,6 +280,19 @@ mod tests {
         let mut copy = Screen::new(20, 3);
         copy.feed(painted.as_bytes());
         assert_eq!(copy.text_between((0, 0), (0, 6)), "ab red");
+    }
+
+    #[test]
+    fn tells_typed_text_under_the_cursor_from_a_greyed_suggestion() {
+        let mut screen = Screen::new(40, 3);
+        screen.feed(b"$ git checkout\x1b[5D");
+        assert!(screen.cursor_on_text());
+        let mut ghost = Screen::new(40, 3);
+        ghost.feed(b"$ git ch\x1b[38;5;8meckout\x1b[0m\x1b[6D");
+        assert!(!ghost.cursor_on_text());
+        let mut end = Screen::new(40, 3);
+        end.feed(b"$ git ch");
+        assert!(!end.cursor_on_text());
     }
 
     #[test]

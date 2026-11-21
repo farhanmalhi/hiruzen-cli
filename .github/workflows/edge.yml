@@ -1,0 +1,24 @@
+name: Edge cases
+
+# Drives bash, zsh, fish and PowerShell in a pseudo-terminal and checks what
+# ends up on screen: bad quotes, pastes, tiny windows, wrapped lines, a
+# deleted working directory, broken settings and more.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  edge:
+    name: Edge cases (Linux)
+    runs-on: ubuntu-latest
+    container: rust:1-slim-bookworm
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Run the edge-case suite
+        run: bash tests/edge/run.sh

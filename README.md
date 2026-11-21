@@ -9,17 +9,12 @@ As you type a command, hiruzen shows
 what the next word can be (subcommands, options, branches, files, scripts),
 so you do not have to remember it.
 
-```
-$ git ch
-      checkout        Switch branches or restore working tree files
-      cherry-pick     Apply the changes introduced by some existing commits
-      branch          List, create, or delete branches
-```
+![The hiruzen dropdown listing git subcommands that match "ch", with a description beside each](assets/demo.svg)
 
 It is a single Rust binary with the completion specs embedded, so there is
 nothing else to install. The only network requests are the registry searches
-described under [Privacy and security](#privacy-and-security), which one
-setting turns off. It runs on macOS
+and the daily check for a new version described under
+[Privacy and security](#privacy-and-security); a setting turns each off. It runs on macOS
 and Linux with zsh, bash, fish and PowerShell. Windows (PowerShell, Git Bash,
 cmd) builds and passes its tests, but is
 [not yet tried in a live terminal](docs/testing.md). If hiruzen cannot
@@ -164,6 +159,10 @@ hiruzen scripts <ACTION>       Manage saved scripts: list, new, edit, show, remo
 hiruzen plugins <ACTION>       Manage shell plugins: list, add, remove, update
 hiruzen evaluate               Measure suggestion quality against your own history
 hiruzen ssh [SSH ARGUMENTS]    Connect with ssh and keep suggestions working remotely
+hiruzen learn <COMMAND>        Teach hiruzen a tool it has no spec for, from its --help
+hiruzen update                 Check whether a newer version has been released
+hiruzen tips                   Show things worth knowing
+hiruzen update [-y]            Check for a newer version and install it
 hiruzen doctor                 Check that hiruzen is set up correctly
 hiruzen issue [TITLE]          Open a new issue with your system details filled in
 hiruzen complete <COMMAND>     Print the suggestions for a partly typed command
@@ -242,6 +241,7 @@ hiruzen settings open                         # open the file in your editor
 | `prompt.showHost` | `false` | Start that prompt with your user and machine name: `you@host my-project (main) %` |
 | `prompt.directoryLength` | `24` | Longest directory name the prompt shows, from 4 to 80. A longer name loses its middle: `my-very-long…oject-name-2` |
 | `prompt.branchLength` | `80` | Longest branch name the prompt shows, from 4 to 80. The branch is shown whole unless the prompt would fill more than three quarters of the window; then it loses its middle: `feature/long-b…for-user-auth` |
+| `updates.check` | `true` | Look for a new version once a day. When there is one, the next terminal you open asks `Update now? [Y/n]` and, if you agree, installs it the way hiruzen was installed (Homebrew, the installer script or cargo). A version you decline is not offered again; `hiruzen update` installs it whenever you like. `false` stops the checks |
 
 `hiruzen theme --list` previews every theme, and `hiruzen theme nord` selects
 one.
@@ -387,7 +387,11 @@ What has been tested on each platform, and what has not, is in
   registry for package names, and `cargo add` searches crates.io. This is on
   by default, and it means the word you are typing in that position is sent
   to that service. Nothing else on the command line is sent.
-- To keep everything on your machine, run
+- Once a day hiruzen asks GitHub for the number of the latest release, so
+  that it can offer to update. The request carries nothing about you or what
+  you type, and nothing is installed until you answer yes.
+  `hiruzen settings updates.check false` turns it off.
+- To keep everything you type on your machine, run
   `hiruzen settings autocomplete.onlineSuggestions false`. Spec commands that
   exist to fetch from the network (`curl`, `wget` and similar) are then
   refused.
@@ -412,6 +416,19 @@ What has been tested on each platform, and what has not, is in
   20,000 commands. A command typed with a leading space is not recorded, and
   setting `autocomplete.history` to `false` stops both the reading and the
   recording. Delete the file to forget everything.
+- Passwords and tokens are removed before a command is recorded. The value
+  of an option or variable whose name says it is a secret (`--password`,
+  `--token`, `API_KEY=`), the password in a URL, and anything shaped like a
+  known service's token are replaced with `<redacted>`. This catches the
+  common cases, not every secret; type a space first to keep a command out
+  of the record entirely.
+- hiruzen also keeps `picks.tsv`, which notes the suggestion you accepted
+  and the ones listed above it, so it can learn your preferences. It holds
+  suggestion names, not whole commands.
+- If hiruzen itself fails while you are working, your shell keeps running:
+  hiruzen stops drawing suggestions for that terminal and only passes your
+  typing through. The failure is written to `crash.log` in the settings
+  directory, which is worth attaching to a bug report.
 - It runs local commands as you type. Live suggestions come from running
   read-only commands in the current directory: `git` to list branches, tags
   and changed files, and the listing commands that a tool's spec names (for
@@ -436,8 +453,8 @@ What has been tested on each platform, and what has not, is in
 
 - Suggestions are valid and well ranked, not guaranteed correct: hiruzen
   cannot know which of several valid words you intend.
-- Suggestions appear only at a shell prompt, with the cursor at the end of
-  what you have typed. They are hidden inside full-screen programs such as
+- Suggestions appear only at a shell prompt, and not while the cursor is in
+  the middle of a word. They are hidden inside full-screen programs such as
   `vim` and `less`.
 - In a pipeline, only the last command is completed.
 - Live suggestions depend on the tool being installed and able to answer.
@@ -445,9 +462,15 @@ What has been tested on each platform, and what has not, is in
   command that takes longer than 3 seconds gives no suggestions.
 - Six tools in the library (`az`, `heroku`,
   `shopify`, `fig`, `infracost` and `@usermn/sdc`) build their whole spec in
-  code at run time; hiruzen does not do that, so they have no spec.
-- Aliases are understood in zsh and bash, and functions in zsh, bash and
-  fish. PowerShell aliases and functions are not reported yet.
+  code at run time; hiruzen does not do that, so they have no built-in
+  spec. `hiruzen learn az` builds one from the tool's own help.
+- A tool hiruzen has never heard of gets suggestions from your history and
+  the current folder until you run `hiruzen learn <command>`. hiruzen does
+  not run an unknown program's `--help` on its own, because it cannot know
+  what that program would do.
+- Aliases complete as the commands they stand for in zsh and bash. In fish
+  and PowerShell, aliases and functions are suggested by name only. cmd
+  reports neither, and no exit statuses.
 - Nushell, Xonsh and other shells not listed above are not supported.
 
 ## Troubleshooting
@@ -460,6 +483,7 @@ What has been tested on each platform, and what has not, is in
 | `hiruzen: needs an interactive terminal` | hiruzen was started with its input or output redirected. Run it directly in a terminal. |
 | `hiruzen: Git Bash was not found` | Install [Git for Windows](https://gitforwindows.org), or choose another shell with `--shell`. |
 | `hiruzen: <shell> was not found on PATH` | Install that shell, or name one you have with `--shell`. |
+| A tool you use has no suggestions at all | Run `hiruzen learn <command>`. It reads the tool's `--help` and builds suggestions from it. |
 | A tool gives no suggestions, or wrong ones | Run `hiruzen complete "<what you typed>"` to see what hiruzen offers. Include that output when you report the problem. |
 | A tool's live values are missing (branches, packages, resources) | Run the same `hiruzen complete` with `HIRUZEN_DEBUG=1` set. It prints each command the spec ran, with its exit status, and the error if the spec's own code failed. |
 | You need a shell without hiruzen | Start one with the variable set, for example `HIRUZEN=1 zsh`. The `init` line then skips hiruzen. |

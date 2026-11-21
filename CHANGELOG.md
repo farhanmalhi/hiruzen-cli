@@ -8,6 +8,13 @@ All notable changes to hiruzen are recorded here. The format follows
 
 ### Added
 
+- **hiruzen offers to update itself.** Once a day it looks for a new
+  release. When there is one, the next terminal you open asks
+  `Update now? [Y/n]` and installs it the way hiruzen was installed
+  (Homebrew, the installer script or cargo). A version you decline is not
+  offered again. `hiruzen update` now installs the new version too, and
+  `hiruzen update -y` does so without asking. Set `updates.check` to `false`
+  to stop the daily check.
 - **Suggestions follow the project you are in.** hiruzen now records the
   commands you run together with the project (git repository) each ran in,
   and ranks by that project's habits first. Values such as branch names are
@@ -43,6 +50,24 @@ All notable changes to hiruzen are recorded here. The format follows
   commands, and the report now separates what could not be known from how
   well the rest was ordered.
 
+- **Learns from your picks.** A suggestion you keep choosing in a given
+  place rises; one always listed first and never chosen sinks.
+- **`hiruzen learn <command>`** builds suggestions for a tool hiruzen has no
+  spec for, by reading the tool's `--help`.
+- **The key that inserts the highlighted suggestion is shown beside it**:
+  `⇥` for Tab, and `↵` once Enter would insert it.
+- **Your shell survives a failure in hiruzen.** hiruzen stops drawing
+  suggestions in that terminal and passes your typing straight through; the
+  failure goes to `crash.log`.
+- **Secrets are kept out of the record.** Passwords, tokens and URL
+  passwords typed as arguments are replaced with `<redacted>` before a
+  command is remembered.
+- **Suggestions with the cursor inside a command.** They now appear at a gap
+  between words, and are withheld only inside a word.
+- **Aliases and functions in PowerShell** are suggested by name.
+- **`hiruzen update`** says whether a newer version exists and how to get
+  it; **`hiruzen tips`** lists things worth knowing.
+
 ### Changed
 
 - **Online suggestions are now on by default.** Specs may search a package
@@ -69,6 +94,8 @@ All notable changes to hiruzen are recorded here. The format follows
 - New fish shells now start hiruzen after `hiruzen install`.
 - `cargo add` and other specs that query a web service now get results when
   online suggestions are on.
+- After clearing the screen with Ctrl+L, suggestions keep working on the
+  line you were typing.
 
 ## [0.1.0] - 2026-11-21
 

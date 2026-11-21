@@ -37,8 +37,9 @@ hiruzen adapts as you work; there is nothing to train or turn on.
 | Your typing mistakes | Exit statuses the shell reports | A command the shell could not find is never suggested; a failed one counts for less |
 | Your aliases and functions | Reported by the shell when it starts | They are suggested, and aliases complete as their commands |
 
-Newer habits outweigh older ones throughout. hiruzen does not yet learn from
-which suggestion you pick or pass over.
+| Which suggestions you take | Each suggestion you accept, and the ones listed above it | One you keep picking in a given place rises; one always shown first and never taken sinks |
+
+Newer habits outweigh older ones throughout.
 
 What you type is matched in four ways, best first: exact prefix,
 case-insensitive prefix, substring, then letters in order (`ch` matches

@@ -70,6 +70,34 @@ fn action(bindings: &Bindings, input: &[u8]) -> Option<Action> {
     }
 }
 
+/// Runs one step of the session, reporting whether it completed. A failure
+/// inside it is contained here.
+fn guarded(step: impl FnOnce()) -> bool {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(step)).is_ok()
+}
+
+/// Sends failure reports to a file in the settings directory. Printed to the
+/// terminal they would land in the middle of the user's shell.
+fn install_crash_log() {
+    std::panic::set_hook(Box::new(|info| {
+        let Some(dir) = settings::config_dir() else { return };
+        let _ = std::fs::create_dir_all(&dir);
+        if let Ok(mut file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(dir.join("crash.log"))
+        {
+            let _ = writeln!(file, "hiruzen {}: {info}", env!("CARGO_PKG_VERSION"));
+        }
+    }));
+}
+
+/// True when shell output erases the whole screen.
+fn clears_screen(data: &[u8]) -> bool {
+    let has = |needle: &[u8]| data.windows(needle.len()).any(|window| window == needle);
+    has(b"\x1b[2J") || has(b"\x1b[3J") || has(b"\x1b[H\x1b[J")
+}
+
 /// The arrow keys shells use to walk their history.
 fn is_history_key(input: &[u8]) -> bool {
     matches!(input, b"\x1b[A" | b"\x1bOA" | b"\x1b[B" | b"\x1bOB")
@@ -157,6 +185,8 @@ struct Session {
     settings_stamp: Option<SystemTime>,
     /// The user has moved the highlight in the dropdown now showing.
     moved: bool,
+    /// The cursor is inside a word.
+    mid_word: bool,
     /// The command just sent to the shell and where it was typed, kept
     /// until the shell says how it ended.
     pending: Option<(String, Option<PathBuf>)>,
@@ -198,6 +228,7 @@ impl Session {
     /// should be showing.
     fn draw(&mut self) -> String {
         if self.settings.disable
+            || self.mid_word
             || self.line.is_none()
             || self.browsing_history
             || self.dismissed.is_some()
@@ -236,6 +267,7 @@ impl Session {
                 theme: self.settings.theme,
                 max_visible: self.settings.height,
                 descriptions: self.settings.descriptions,
+                accept_key: self.accept_key(),
             },
         };
         let Some(layout) = popup::layout(&request) else {
@@ -269,6 +301,19 @@ impl Session {
         self.write_terminal(out.as_bytes());
     }
 
+    /// After the screen is cleared the shell redraws the prompt and the line
+    /// at the top without marking them again. The line is still known, so
+    /// where it starts follows from where the cursor ended up.
+    fn anchor_after_clear(&mut self) {
+        let Some(anchor) = self.anchor else { return };
+        let (cols, _) = self.screen.size();
+        let (cursor_row, _) = self.screen.cursor();
+        let typed = self.line.as_deref().map_or(0, unicode_width::UnicodeWidthStr::width);
+        let rows_spanned = (usize::from(anchor.col) + typed) / usize::from(cols.max(1));
+        let row = usize::from(cursor_row).saturating_sub(rows_spanned) as u16;
+        self.anchor = Some(self.screen.anchor_at(row, anchor.col));
+    }
+
     /// Hands the command waiting for its exit status to the engine.
     fn record_pending(&mut self, status: Option<i32>) {
         if let Some((command, cwd)) = self.pending.take() {
@@ -292,12 +337,37 @@ impl Session {
         }
     }
 
+    /// The symbol for the key that would insert the highlighted suggestion
+    /// right now. Enter does so only once the highlight has been moved;
+    /// until then it runs the command, and Tab is the key to show.
+    fn accept_key(&self) -> Option<&'static str> {
+        let bound = |key: &[u8]| self.settings.keys.accept.iter().any(|sequence| sequence == key);
+        if (self.settings.enter_accepts && self.moved) || bound(b"\r") {
+            Some("↵")
+        } else if bound(b"\t") {
+            Some("⇥")
+        } else {
+            None
+        }
+    }
+
     /// Types the highlighted suggestion into the shell.
     fn accept(&mut self) {
         let edit = self
             .completion
             .as_ref()
             .and_then(|completion| engine::edit_for(&completion.token, completion.items.get(self.selected)?));
+        // What was taken, and what was listed above it and passed over.
+        if let (Some(completion), Some(line)) = (&self.completion, &self.line) {
+            if let Some(picked) = completion.items.get(self.selected) {
+                let passed: Vec<&str> = completion.items[..self.selected.min(3)]
+                    .iter()
+                    .map(|c| c.name.as_str())
+                    .collect();
+                let cwd = (!self.remote).then_some(self.cwd.as_path());
+                self.engine.note_pick(line, cwd, &picked.name, &passed);
+            }
+        }
         if let Some(edit) = edit {
             let mut keys = "\x7f".repeat(edit.backspaces);
             keys.push_str(&edit.text);
@@ -332,9 +402,13 @@ impl Session {
                 (cursor >= (row, anchor.col)).then(|| self.screen.text_between((row, anchor.col), cursor))
             })
         };
-        if line == self.line {
+        // Inside a word, inserting a suggestion would run into the letters
+        // after the cursor, so none is offered there.
+        let mid_word = line.is_some() && self.screen.cursor_on_text();
+        if line == self.line && mid_word == self.mid_word {
             return;
         }
+        self.mid_word = mid_word;
         self.line = line;
         self.version += 1;
 
@@ -355,6 +429,7 @@ impl Session {
                 if !line.trim().is_empty()
                     && self.dismissed.is_none()
                     && !self.browsing_history
+                    && !self.mid_word
                     && !self.settings.disable =>
             {
                 let _ = self.requests.send(CompletionRequest {
@@ -377,7 +452,11 @@ impl Session {
                     if cfg!(windows) {
                         remove_win32_input_request(&mut data);
                     }
+                    let cleared = self.anchor.is_some() && clears_screen(&data);
                     self.screen.feed(&data);
+                    if cleared {
+                        self.anchor_after_clear();
+                    }
                     self.stream.feed(&data);
                     out.extend_from_slice(&data);
                 }
@@ -442,6 +521,11 @@ impl Session {
     }
 
     fn on_input(&mut self, bytes: &[u8]) {
+        // For testing that a failure hands the shell back: with this
+        // variable set, a marker in the input makes hiruzen fail on purpose.
+        if std::env::var_os("HIRUZEN_TEST_PANIC").is_some() && bytes == b"\x1b[99~" {
+            panic!("requested by HIRUZEN_TEST_PANIC");
+        }
         if self.anchor_pending {
             // By the first key press the prompt is on screen, and the
             // cursor is where the command will start.
@@ -565,7 +649,7 @@ fn normalize_cwd(path: &str, shell: Shell) -> PathBuf {
 
 /// Starts `shell` under hiruzen and runs until it exits. Returns the shell's
 /// exit code.
-pub fn run(shell: Shell, login: bool) -> Result<i32, String> {
+pub fn run(shell: Shell, login: bool, notice: Option<&str>) -> Result<i32, String> {
     let (cols, rows) = crossterm::terminal::size().map_err(|e| format!("cannot read the terminal size: {e}"))?;
     let launch = shell.launch(login)?;
     let scratch = launch.scratch.clone();
@@ -722,6 +806,7 @@ pub fn run(shell: Shell, login: bool) -> Result<i32, String> {
         settings: Settings::default(),
         settings_stamp: None,
         moved: false,
+        mid_word: false,
         pending: None,
         requests,
         pty: writer,
@@ -731,23 +816,66 @@ pub fn run(shell: Shell, login: bool) -> Result<i32, String> {
 
     // Start from an empty screen so the model and the terminal agree.
     session.write_terminal(b"\x1b[H\x1b[2J");
+    if let Some(notice) = notice {
+        let line = format!("{notice}\r\n");
+        session.write_terminal(line.as_bytes());
+        session.screen.feed(line.as_bytes());
+    }
 
+    // If hiruzen's own code fails, the user must not lose their shell. Each
+    // event is handled under a guard; after a failure hiruzen stops drawing
+    // suggestions and only carries bytes between the terminal and the shell.
+    install_crash_log();
+    let mut handed_back = false;
     let code = loop {
-        match inbox.recv() {
-            Ok(Event::Output(bytes)) => session.on_output(&bytes),
-            Ok(Event::Input(bytes)) => session.on_input(&bytes),
-            Ok(Event::Completed { version, result }) => session.on_completed(version, result),
-            Ok(Event::Resize(cols, rows)) => session.on_resize(cols, rows, master.as_ref()),
-            Ok(Event::Exit(code)) => {
-                // Output the shell wrote just before exiting may still be queued.
-                while let Ok(event) = inbox.recv_timeout(Duration::from_millis(30)) {
-                    if let Event::Output(bytes) = event {
-                        session.on_output(&bytes);
+        let event = match inbox.recv() {
+            Ok(event) => event,
+            Err(_) => break 1,
+        };
+        if let Event::Exit(code) = event {
+            // Output the shell wrote just before exiting may still be queued.
+            while let Ok(event) = inbox.recv_timeout(Duration::from_millis(30)) {
+                if let Event::Output(bytes) = event {
+                    if handed_back || !guarded(|| session.on_output(&bytes)) {
+                        handed_back = true;
+                        session.write_terminal(&bytes);
                     }
                 }
-                break code;
             }
-            Err(_) => break 1,
+            break code;
+        }
+        if handed_back {
+            match event {
+                Event::Output(bytes) => session.write_terminal(&bytes),
+                Event::Input(bytes) => session.write_shell(&bytes),
+                Event::Resize(cols, rows) => {
+                    let _ = master.resize(PtySize {
+                        rows,
+                        cols,
+                        pixel_width: 0,
+                        pixel_height: 0,
+                    });
+                }
+                Event::Completed { .. } | Event::Exit(_) => {}
+            }
+            continue;
+        }
+        let survived = match &event {
+            Event::Output(bytes) => guarded(|| session.on_output(bytes)),
+            Event::Input(bytes) => guarded(|| session.on_input(bytes)),
+            Event::Completed { version, result } => guarded(|| session.on_completed(*version, result.clone())),
+            Event::Resize(cols, rows) => guarded(|| session.on_resize(*cols, *rows, master.as_ref())),
+            Event::Exit(_) => true,
+        };
+        if !survived {
+            handed_back = true;
+            // Whatever was being handled still has to reach its destination.
+            match event {
+                Event::Output(bytes) => session.write_terminal(&bytes),
+                Event::Input(bytes) => session.write_shell(&bytes),
+                _ => {}
+            }
+            session.write_terminal(b"\x1b[0m\x1b[?25h");
         }
     };
 

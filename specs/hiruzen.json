@@ -16,7 +16,7 @@
         { "name": "docs", "description": "Describe every setting" },
         { "name": "open", "description": "Open the settings file" }
       ],
-      "options": [ { "name": ["-d", "--delete"], "description": "Return a setting to its default", "args": { "name": "key", "suggestions": ["autocomplete.disable", "autocomplete.theme", "autocomplete.height", "autocomplete.descriptions", "autocomplete.fuzzySearch", "autocomplete.history", "autocomplete.disableForCommands", "autocomplete.onlineSuggestions", "keys.accept", "keys.next", "keys.previous", "keys.dismiss", "autocomplete.enterAccepts", "prompt.enable", "prompt.showHost", "prompt.directoryLength", "prompt.branchLength"] } } ],
+      "options": [ { "name": ["-d", "--delete"], "description": "Return a setting to its default", "args": { "name": "key", "suggestions": ["autocomplete.disable", "autocomplete.theme", "autocomplete.height", "autocomplete.descriptions", "autocomplete.fuzzySearch", "autocomplete.history", "autocomplete.disableForCommands", "autocomplete.onlineSuggestions", "keys.accept", "keys.next", "keys.previous", "keys.dismiss", "autocomplete.enterAccepts", "prompt.enable", "prompt.showHost", "prompt.directoryLength", "prompt.branchLength", "updates.check"] } } ],
       "args": [
         { "name": "key", "isOptional": true, "suggestions": [
           { "name": "autocomplete.disable", "description": "Turn suggestions off" },
@@ -35,7 +35,8 @@
           { "name": "prompt.enable", "description": "Dress up zsh's stock prompt" },
           { "name": "prompt.showHost", "description": "Start the prompt with you@host" },
           { "name": "prompt.directoryLength", "description": "Longest directory name the prompt shows" },
-          { "name": "prompt.branchLength", "description": "Longest branch name the prompt shows" }
+          { "name": "prompt.branchLength", "description": "Longest branch name the prompt shows" },
+          { "name": "updates.check", "description": "Look for a new version once a day and offer to install it" }
         ] },
         { "name": "value", "isOptional": true, "suggestions": ["true", "false"] }
       ] },
@@ -56,6 +57,10 @@
       { "name": ["remove", "rm"], "description": "Remove a plugin", "args": { "name": "plugin", "generators": { "script": ["hiruzen", "plugins", "list", "--names"], "splitOn": "\n" } } },
       { "name": "update", "description": "Update plugins cloned with git", "args": { "name": "plugin", "isOptional": true, "generators": { "script": ["hiruzen", "plugins", "list", "--names"], "splitOn": "\n" } } }
     ] },
+    { "name": "learn", "description": "Teach hiruzen a tool it has no spec for, from its --help", "options": [ { "name": "--list", "description": "List what has been learned" }, { "name": "--forget", "description": "Forget a learned tool", "args": { "name": "command" } } ], "args": { "name": "command", "isOptional": true } },
+    { "name": "update", "description": "Check for a newer version and install it", "options": [ { "name": ["-y", "--yes"], "description": "Install it without asking" } ] },
+    { "name": "tips", "description": "Show things worth knowing" },
+    { "name": "evaluate", "description": "Measure suggestion quality against your own history", "options": [ { "name": "--file", "description": "Use a file of commands, one per line", "args": { "name": "path", "template": "filepaths" } }, { "name": "--sequence", "description": "Weight of the previous command", "args": { "name": "number" } }, { "name": "--boost", "description": "Weight of history", "args": { "name": "number" } } ] },
     { "name": ["doctor", "diagnostic"], "description": "Check that hiruzen is set up correctly" },
     { "name": "issue", "description": "Open a new issue with your system details filled in", "args": { "name": "title", "isOptional": true, "isVariadic": true } },
     { "name": "complete", "description": "Print the suggestions for a partly typed command", "options": [ { "name": ["-s", "--shell"], "description": "Complete as this shell would", "args": { "name": "shell", "suggestions": ["zsh", "bash", "fish", "pwsh", "powershell", "cmd"] } } ], "args": { "name": "command" } },

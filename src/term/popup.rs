@@ -29,6 +29,9 @@ pub struct Style {
     /// Most suggestions visible at once; the list scrolls beyond that.
     pub max_visible: usize,
     pub descriptions: bool,
+    /// A symbol for the key that inserts the highlighted suggestion, shown
+    /// right after its name. `None` shows nothing.
+    pub accept_key: Option<&'static str>,
 }
 
 impl Default for Style {
@@ -37,6 +40,7 @@ impl Default for Style {
             theme: settings::theme("dark"),
             max_visible: 8,
             descriptions: true,
+            accept_key: None,
         }
     }
 }
@@ -157,11 +161,10 @@ pub fn layout(request: &Request) -> Option<Layout> {
         let first = (selected / visible) * visible;
         let page = &items[first..(first + visible).min(items.len())];
 
-        let name_width = page
-            .iter()
-            .map(|c| c.label().width())
-            .max()
-            .unwrap_or(0)
+        // Room for the key symbol is kept on every row, so the list does not
+        // change width as the highlight moves.
+        let key_width = style.accept_key.map_or(0, |key| key.width() + 1);
+        let name_width = (page.iter().map(|c| c.label().width()).max().unwrap_or(0) + key_width)
             .clamp(MIN_NAME_WIDTH, MAX_NAME_WIDTH);
         let description_width = page
             .iter()
@@ -206,11 +209,19 @@ pub fn layout(request: &Request) -> Option<Layout> {
                 } else {
                     (theme.marker, theme.row, theme.description)
                 };
-                let mut line = format!(
-                    "{marker_style}{} {name_style}{}",
-                    marker(candidate.kind),
-                    fit(candidate.label(), name_width)
-                );
+                let name = match style.accept_key.filter(|_| is_selected && name_width > key_width) {
+                    // The key that inserts this suggestion, right after its name.
+                    Some(key) => {
+                        let shown = candidate.label().width().min(name_width - key_width);
+                        format!(
+                            "{} {marker_style}{key}{name_style}{}",
+                            fit(candidate.label(), shown),
+                            " ".repeat(name_width - key_width - shown)
+                        )
+                    }
+                    None => fit(candidate.label(), name_width),
+                };
+                let mut line = format!("{marker_style}{} {name_style}{name}", marker(candidate.kind));
                 if description_width > 0 {
                     let description = candidate.description.as_deref().map(first_line).unwrap_or("");
                     line.push_str(&format!("{description_style}  {}", fit(description, description_width)));
@@ -332,6 +343,34 @@ mod tests {
         let mut req = request(&list, 23, 0);
         req.command_row = 21;
         assert_eq!(layout(&req).unwrap().top, 19);
+    }
+
+    #[test]
+    fn shows_the_accept_key_after_the_highlighted_name_only() {
+        let list = items(&["checkout", "cherry-pick"]);
+        let mut req = request(&list, 3, 4);
+        req.style.accept_key = Some("↵");
+        let first = layout(&req).unwrap();
+        assert!(
+            plain(&first.rows[0]).starts_with("> checkout ↵"),
+            "{}",
+            plain(&first.rows[0])
+        );
+        assert!(!plain(&first.rows[1]).contains('↵'));
+        // Every row keeps the same width, with or without the symbol.
+        for row in &first.rows {
+            assert_eq!(plain(row).width(), first.width);
+        }
+        req.selected = 1;
+        let second = layout(&req).unwrap();
+        assert!(plain(&second.rows[1]).starts_with("> cherry-pick ↵"));
+        assert_eq!(second.width, first.width);
+        // A name too long for the column still shows the symbol.
+        let long = items(&["a-very-long-suggestion-name-that-does-not-fit-the-column"]);
+        let mut req = request(&long, 0, 0);
+        req.style.accept_key = Some("⇥");
+        let row = plain(&layout(&req).unwrap().rows[0]);
+        assert!(row.contains("… ⇥"), "{row}");
     }
 
     #[test]

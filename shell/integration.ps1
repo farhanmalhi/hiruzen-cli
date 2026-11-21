@@ -24,3 +24,13 @@ function Global:Prompt() {
     }
     return $Result
 }
+
+# Tell hiruzen the aliases and functions this shell defines, so it can
+# suggest them. Names only: built-in aliases such as `ls` stand for cmdlets
+# whose options differ from the tools hiruzen has specs for.
+if (-not $env:HIRUZEN_REMOTE) {
+    $__HiruzenNames = @(Get-Alias | ForEach-Object Name) + @(Get-Command -CommandType Function | ForEach-Object Name) |
+        Where-Object { $_ -match '^[A-Za-z0-9][A-Za-z0-9._-]*$' }
+    [Console]::Write("$([char]0x1b)]7391;NAMES;$($__HiruzenNames -join ' ')$([char]7)")
+    Remove-Variable __HiruzenNames
+}

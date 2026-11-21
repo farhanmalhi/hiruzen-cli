@@ -3,6 +3,7 @@
 mod commands;
 mod engine;
 mod keys;
+mod learn;
 mod plugins;
 mod scripts;
 mod settings;
@@ -10,6 +11,7 @@ mod shell;
 mod specs;
 mod ssh;
 mod term;
+mod update;
 
 use std::io::IsTerminal;
 use std::process::ExitCode;
@@ -32,6 +34,9 @@ USAGE:
     hiruzen scripts <ACTION>       Manage saved scripts: list, new, edit, show, remove, dir
     hiruzen plugins <ACTION>       Manage shell plugins: list, add, remove, update
     hiruzen ssh [SSH ARGUMENTS]    Connect with ssh and keep suggestions working remotely
+    hiruzen learn <COMMAND>        Teach hiruzen a tool it has no spec for, from its --help
+    hiruzen update [-y]            Check for a newer version and install it (-y: without asking)
+    hiruzen tips                   Show things worth knowing
     hiruzen doctor                 Check that hiruzen is set up correctly
     hiruzen issue [TITLE]          Open a new issue with your system details filled in
     hiruzen complete <COMMAND>     Print the suggestions for a partly typed command
@@ -89,6 +94,9 @@ fn run(args: &[String]) -> Result<i32, String> {
         Some("plugins" | "plugin") => plugins::plugins(&args[1..]),
         Some("evaluate") => commands::evaluate(&args[1..]),
         Some("ssh") => ssh::run(&args[1..]),
+        Some("learn") => learn::learn(&args[1..]),
+        Some("update") => update::update(&args[1..]),
+        Some("tips") => commands::tips(),
         Some("man") => {
             print!("{HELP}");
             Ok(0)
@@ -132,7 +140,8 @@ fn start(args: &[String]) -> Result<i32, String> {
         return Err("needs an interactive terminal".to_string());
     }
 
-    let code = term::session::run(shell.unwrap_or_else(Shell::detect), login)?;
+    let notice = update::offer();
+    let code = term::session::run(shell.unwrap_or_else(Shell::detect), login, notice.as_deref())?;
     // Under --auto the calling shell exits when hiruzen returns 0, so a
     // session that ran reports success whatever its last command returned.
     Ok(if auto { 0 } else { code })
