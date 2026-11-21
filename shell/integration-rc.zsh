@@ -48,8 +48,104 @@ __hiruzen_escape() {
 }
 
 __hiruzen_precmd() {
+	# How the command just run ended, read before anything can change it.
+	builtin local __hiruzen_status=$?
+	builtin printf '\e]7391;EXIT;%s\a' "$__hiruzen_status" > /dev/tty
 	builtin printf '\e]7391;%sCWD;%s\a' "${HIRUZEN_REMOTE:+R}" "$(__hiruzen_escape "${PWD}")" > /dev/tty
 }
+
+# Sets REPLY to $1 cut down to at most $2 characters by dropping its middle,
+# so both ends of a long name stay readable.
+__hiruzen_shorten() {
+	builtin emulate -L zsh
+	builtin local text=$1
+	builtin local -i max=$2 head tail
+	if (( max >= 3 && ${#text} > max )); then
+		head=$(( max / 2 ))
+		tail=$(( max - head - 1 ))
+		text="${text[1,head]}…${text[-tail,-1]}"
+	fi
+	REPLY=$text
+}
+
+# Sets REPLY to the branch checked out in the current directory's repository
+# and REPLY_KIND to "branch", or to the first seven characters of the commit
+# and "commit" when no branch is checked out. Reads .git directly, so drawing
+# a prompt starts no process.
+__hiruzen_git_head() {
+	builtin emulate -L zsh
+	builtin local dir=$PWD head line
+	REPLY= REPLY_KIND=
+	while true; do
+		if [[ -f $dir/.git/HEAD ]]; then
+			head=$dir/.git/HEAD
+			break
+		elif [[ -f $dir/.git ]]; then
+			# A worktree or submodule: .git is a file naming the real directory.
+			IFS= builtin read -r line < $dir/.git 2>/dev/null || builtin return 1
+			line=${line#gitdir: }
+			[[ $line == /* ]] || line=$dir/$line
+			head=$line/HEAD
+			break
+		fi
+		[[ $dir == / || -z $dir ]] && builtin return 1
+		dir=${dir:h}
+	done
+	IFS= builtin read -r line < $head 2>/dev/null || builtin return 1
+	if [[ $line == 'ref: refs/heads/.invalid' ]]; then
+		# A reftable repository keeps a placeholder in HEAD; ask git.
+		if line=$(command git symbolic-ref --short HEAD 2>/dev/null); then
+			REPLY=$line REPLY_KIND=branch
+		elif line=$(command git rev-parse --short=7 HEAD 2>/dev/null); then
+			REPLY=$line REPLY_KIND=commit
+		fi
+	elif [[ $line == 'ref: '* ]]; then
+		line=${line#ref: }
+		REPLY=${line#refs/heads/} REPLY_KIND=branch
+	elif [[ -n $line ]]; then
+		REPLY=${line[1,7]} REPLY_KIND=commit
+	fi
+	[[ -n $REPLY ]]
+}
+
+# The text goes through psvar, which zsh prints as it is, so a directory or
+# branch named like a prompt escape or a command substitution stays text.
+__hiruzen_prompt_precmd() {
+	builtin emulate -L zsh
+	builtin local REPLY REPLY_KIND
+	__hiruzen_shorten "${(%):-%1~}" ${HIRUZEN_PROMPT_DIRECTORY:-24}
+	psvar[1]=$REPLY
+	psvar[2]= psvar[3]=
+	if __hiruzen_git_head; then
+		builtin local kind=$REPLY_KIND
+		# The branch is shown whole unless the prompt would then take more
+		# than three quarters of the window, leaving little room to type.
+		builtin local -i room=$(( ${COLUMNS:-80} * 3 / 4 - ${#psvar[1]} - 5 ))
+		if [[ -n $HIRUZEN_PROMPT_HOST ]]; then
+			room=$(( room - ${#${(%):-%n@%m }} ))
+		fi
+		(( room < 12 )) && room=12
+		(( room > ${HIRUZEN_PROMPT_BRANCH:-80} )) && room=${HIRUZEN_PROMPT_BRANCH:-80}
+		__hiruzen_shorten "$REPLY" $room
+		if [[ $kind == branch ]]; then
+			psvar[2]=$REPLY
+		else
+			psvar[3]=$REPLY
+		fi
+	fi
+}
+
+# A prompt that zsh or macOS set is replaced by hiruzen's: colours, a short
+# directory name and the git branch. A prompt you or a theme set is kept.
+if [[ -n $HIRUZEN_PROMPT ]] && [[ $PS1 == '%n@%m %1~ %# ' || $PS1 == '%m%# ' ]]; then
+	PS1='%B%F{blue}%1v%f%b%(2V. %F{magenta}(%2v%)%f.)%(3V. %F{yellow}(%3v%)%f.) %(?..%F{red})%#%f '
+	# The user and machine names never change on your own machine, so they
+	# are shown only when asked for.
+	if [[ -n $HIRUZEN_PROMPT_HOST ]]; then
+		PS1="%F{green}%n@%m%f $PS1"
+	fi
+	add-zsh-hook precmd __hiruzen_prompt_precmd
+fi
 
 # The markers are sent when the line editor starts, after the prompt has
 # been drawn, so they work with any prompt theme.
@@ -69,3 +165,18 @@ fi
 zle -N zle-line-init __hiruzen_zle_line_init
 
 add-zsh-hook precmd __hiruzen_precmd
+
+# Tell hiruzen the aliases and functions this shell defines, so it can
+# suggest them and complete an alias as the command it stands for.
+if [[ -z $HIRUZEN_REMOTE ]]; then
+	() {
+		builtin local name
+		# (@) keeps the names as separate words inside the quotes below;
+		# without it they are filtered as one string.
+		for name in ${(k)aliases}; do
+			[[ $name == *[$' =\e\a\n']* || ${aliases[$name]} == *[$'\e\a\n']* ]] && continue
+			builtin printf '\e]7391;ALIAS;%s=%s\a' "$name" "${aliases[$name]}"
+		done
+		builtin printf '\e]7391;NAMES;%s\a' "${(j: :)${(@k)functions:#[_.+-]*}}"
+	} > /dev/tty
+fi

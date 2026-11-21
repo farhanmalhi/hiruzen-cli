@@ -46,6 +46,7 @@ OPTIONS:
 
 KEYS (while suggestions are showing):
     Tab         Accept the highlighted suggestion
+    Enter       Accept it too, once you have moved the highlight
     Up / Down   Move the highlight
     Esc         Hide suggestions for the current word
 ";

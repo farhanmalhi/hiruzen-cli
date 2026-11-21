@@ -18,8 +18,18 @@ const COMMAND_TIMEOUT: Duration = Duration::from_secs(3);
 /// How long a command's output is reused. Typing a word re-filters the same
 /// output instead of re-running the command on each keystroke.
 const CACHE_TTL: Duration = Duration::from_secs(4);
+/// How long a successful fetch from the network is reused. A registry's
+/// answer to a search does not change from one keystroke to the next, and
+/// going back to a word already searched for should not ask again.
+const NETWORK_CACHE_TTL: Duration = Duration::from_secs(60);
+/// How long nothing is fetched after a fetch could not reach the network.
+/// Without a connection every attempt only delays the suggestions that need
+/// none, so the next one waits until the connection has had time to return.
+const OFFLINE_PAUSE: Duration = Duration::from_secs(20);
 const MAX_OUTPUT: usize = 1 << 20;
 const MAX_ITEMS: usize = 2000;
+/// Most directory entries looked at when listing files.
+const MAX_SCANNED: usize = 200_000;
 
 /// The named generators hiruzen implements itself, without running spec code.
 const NATIVE: &[&str] = &[
@@ -99,6 +109,31 @@ pub struct Output {
     pub stderr: String,
     /// The exit status; 1 when the command could not be run or timed out.
     pub status: i32,
+    /// The command was stopped for taking too long.
+    pub timed_out: bool,
+}
+
+/// True when a fetch ended the way it does without a connection: it ran out
+/// of time, or the program reported that it could not resolve or reach the
+/// host. A refusal by the service (a 404, a rate limit) is not this.
+fn could_not_connect(argv: &[String], output: &Output) -> bool {
+    let name = argv
+        .first()
+        .map(|program| {
+            program
+                .rsplit(['/', '\\'])
+                .next()
+                .unwrap_or(program)
+                .trim_end_matches(".exe")
+        })
+        .unwrap_or("");
+    output.timed_out
+        || match name {
+            // Proxy or host not resolved, connection failed, timed out.
+            "curl" => matches!(output.status, 5 | 6 | 7 | 28),
+            "wget" => output.status == 4,
+            _ => false,
+        }
 }
 
 /// Environment changes for a command: a value to set, or `None` to unset.
@@ -114,8 +149,7 @@ pub trait Runner: Send + Sync {
         match self.run(argv, cwd) {
             Some(stdout) => Output {
                 stdout,
-                stderr: String::new(),
-                status: 0,
+                ..Output::default()
             },
             None => Output {
                 status: 1,
@@ -172,12 +206,14 @@ impl Runner for SystemRunner {
         let stdout = drain(child.stdout.take().map(|p| Box::new(p) as Box<dyn Read + Send>));
         let stderr = drain(child.stderr.take().map(|p| Box::new(p) as Box<dyn Read + Send>));
         let deadline = Instant::now() + COMMAND_TIMEOUT;
+        let mut timed_out = false;
         let status = loop {
             match child.try_wait() {
                 Ok(Some(status)) => break status.code().unwrap_or(1),
                 Ok(None) if Instant::now() >= deadline => {
                     let _ = child.kill();
                     let _ = child.wait();
+                    timed_out = true;
                     break 1;
                 }
                 Ok(None) => std::thread::sleep(Duration::from_millis(2)),
@@ -188,13 +224,54 @@ impl Runner for SystemRunner {
             stdout: String::from_utf8_lossy(&stdout.join().unwrap_or_default()).into_owned(),
             stderr: String::from_utf8_lossy(&stderr.join().unwrap_or_default()).into_owned(),
             status,
+            timed_out,
         }
     }
 }
 
 type CacheKey = (Vec<String>, PathBuf);
-/// When a command was run and how it went.
-type CacheEntry = (Instant, Arc<Output>);
+/// When a command was run, how it went, and how long that stays good.
+type CacheEntry = (Instant, Arc<Output>, Duration);
+
+/// How one completion request treats commands that fetch from the network,
+/// and what became of them.
+///
+/// A fetch takes far longer than everything else a request does. So that the
+/// dropdown does not wait for it, a request can first be answered with
+/// fetches left out, and then again in full.
+#[derive(Debug, Default)]
+pub struct Network {
+    /// Leave out fetches whose answer is not already at hand.
+    defer: bool,
+    deferred: AtomicBool,
+    used: AtomicBool,
+    unreachable: AtomicBool,
+}
+
+impl Network {
+    /// Fetches are left out and noted, for the caller to make later.
+    pub fn deferring() -> Self {
+        Network {
+            defer: true,
+            ..Network::default()
+        }
+    }
+
+    /// A fetch was left out: there is more to come for this request.
+    pub fn deferred(&self) -> bool {
+        self.deferred.load(Ordering::Relaxed)
+    }
+
+    /// The request's suggestions come at least partly from the network.
+    pub fn used(&self) -> bool {
+        self.used.load(Ordering::Relaxed)
+    }
+
+    /// A fetch was wanted but there is no connection to make it over.
+    pub fn unreachable(&self) -> bool {
+        self.unreachable.load(Ordering::Relaxed)
+    }
+}
 
 /// What is being completed, for generators that depend on it.
 pub struct Request<'a> {
@@ -208,6 +285,7 @@ pub struct Request<'a> {
     pub token: &'a str,
     pub cwd: &'a Path,
     pub shell: Shell,
+    pub network: &'a Network,
 }
 
 /// Produces the dynamic suggestions for a spec argument.
@@ -216,6 +294,8 @@ pub struct Generators {
     online: AtomicBool,
     runner: Box<dyn Runner>,
     cache: Mutex<HashMap<CacheKey, CacheEntry>>,
+    /// When a fetch last failed for want of a connection.
+    offline_since: Mutex<Option<Instant>>,
 }
 
 impl Generators {
@@ -224,6 +304,7 @@ impl Generators {
             online: AtomicBool::new(false),
             runner,
             cache: Mutex::new(HashMap::new()),
+            offline_since: Mutex::new(None),
         }
     }
 
@@ -235,37 +316,83 @@ impl Generators {
         self.online.store(online, Ordering::Relaxed);
     }
 
-    fn exec(&self, mut argv: Vec<String>, cwd: &Path, env: &EnvChanges) -> Arc<Output> {
-        if !self.online.load(Ordering::Relaxed) && fetches_from_network(&argv) {
-            return Arc::new(Output {
+    fn exec(&self, mut argv: Vec<String>, cwd: &Path, env: &EnvChanges, network: &Network) -> Arc<Output> {
+        let failed = || {
+            Arc::new(Output {
                 status: 1,
                 ..Output::default()
-            });
+            })
+        };
+        let fetches = fetches_from_network(&argv);
+        if fetches {
+            if !self.online.load(Ordering::Relaxed) {
+                return failed();
+            }
+            network.used.store(true, Ordering::Relaxed);
         }
+        let defer = || {
+            network.deferred.store(true, Ordering::Relaxed);
+            failed()
+        };
         identify_curl(&mut argv);
         if !env.is_empty() {
+            if fetches && network.defer {
+                return defer();
+            }
             // The result depends on more than the command line; do not share it.
             return Arc::new(self.runner.exec(&argv, cwd, env));
         }
         let key = (argv, cwd.to_path_buf());
         if let Ok(cache) = self.cache.lock() {
-            if let Some((at, output)) = cache.get(&key) {
-                if at.elapsed() < CACHE_TTL {
+            if let Some((at, output, ttl)) = cache.get(&key) {
+                if at.elapsed() < *ttl {
                     return output.clone();
                 }
             }
         }
+        if fetches {
+            let paused = self
+                .offline_since
+                .lock()
+                .is_ok_and(|since| since.is_some_and(|at| at.elapsed() < OFFLINE_PAUSE));
+            if paused {
+                network.unreachable.store(true, Ordering::Relaxed);
+                return failed();
+            }
+            if network.defer {
+                return defer();
+            }
+        }
         let output = Arc::new(self.runner.exec(&key.0, cwd, env));
+        if fetches {
+            let unreachable = could_not_connect(&key.0, &output);
+            if unreachable {
+                network.unreachable.store(true, Ordering::Relaxed);
+            }
+            if let Ok(mut since) = self.offline_since.lock() {
+                *since = unreachable.then(Instant::now);
+            }
+        }
+        let ttl = if fetches && output.status == 0 {
+            NETWORK_CACHE_TTL
+        } else {
+            CACHE_TTL
+        };
         if let Ok(mut cache) = self.cache.lock() {
-            cache.retain(|_, (at, _)| at.elapsed() < CACHE_TTL);
-            cache.insert(key, (Instant::now(), output.clone()));
+            cache.retain(|_, (at, _, ttl)| at.elapsed() < *ttl);
+            cache.insert(key, (Instant::now(), output.clone(), ttl));
         }
         output
     }
 
     /// The command's standard output, if it succeeded.
     fn run(&self, argv: &[&str], cwd: &Path) -> Option<String> {
-        let output = self.exec(argv.iter().map(|s| s.to_string()).collect(), cwd, &[]);
+        self.run_for(argv.iter().map(|s| s.to_string()).collect(), cwd, &Network::default())
+    }
+
+    /// As [`run`](Self::run), for a command a spec names, which may be a fetch.
+    fn run_for(&self, argv: Vec<String>, cwd: &Path, network: &Network) -> Option<String> {
+        let output = self.exec(argv, cwd, &[], network);
         (output.status == 0).then(|| output.stdout.clone())
     }
 
@@ -295,7 +422,7 @@ impl Generators {
             out.extend(self.template(template, token, cwd, shell));
         }
         if let Some(native) = generator.native.as_deref().filter(|name| NATIVE.contains(name)) {
-            out.extend(self.native(native, cwd));
+            out.extend(self.native(native, cwd, request.tokens));
         } else if generator.js.is_some() && matches!(root, "make" | "gmake") {
             // The spec asks make to dump its rule database, which lists make's
             // built-in file names as targets. Reading the Makefile is exact.
@@ -305,18 +432,14 @@ impl Generators {
                 Some(output) => out.extend(js_candidates(output, token)),
                 // The spec's own code could not be run; make a best guess.
                 None if !generator.script.is_empty() => {
-                    let argv = script_argv(&generator.script);
-                    let argv: Vec<&str> = argv.iter().map(String::as_str).collect();
-                    if let Some(output) = self.run(&argv, cwd) {
+                    if let Some(output) = self.run_for(script_argv(&generator.script), cwd, request.network) {
                         out.extend(guess_suggestions(&output));
                     }
                 }
                 None => out.extend(self.fallback(root, token, cwd, shell)),
             }
         } else if !generator.script.is_empty() {
-            let argv = script_argv(&generator.script);
-            let argv: Vec<&str> = argv.iter().map(String::as_str).collect();
-            if let Some(output) = self.run(&argv, cwd) {
+            if let Some(output) = self.run_for(script_argv(&generator.script), cwd, request.network) {
                 let separator = generator.split_on.as_deref().unwrap_or("\n");
                 let items = output
                     .split(separator)
@@ -361,7 +484,7 @@ impl Generators {
                     ..Output::default()
                 })
             } else {
-                self.exec(argv, &cwd, &env)
+                self.exec(argv, &cwd, &env, request.network)
             };
             if std::env::var_os("HIRUZEN_DEBUG").is_some() {
                 eprintln!(
@@ -411,7 +534,48 @@ impl Generators {
         }
     }
 
-    fn native(&self, name: &str, cwd: &Path) -> Vec<Candidate> {
+    /// Local branches, most recently committed first, with the current
+    /// branch placed by what the command is for: first when pushing or
+    /// pulling, where it is nearly always the one meant, and last when
+    /// switching or merging, where it never is.
+    fn local_branches(&self, cwd: &Path, tokens: &[String]) -> Vec<Candidate> {
+        let wants_current = tokens.iter().any(|t| matches!(t.as_str(), "push" | "pull"));
+        let avoids_current = tokens
+            .iter()
+            .any(|t| matches!(t.as_str(), "checkout" | "switch" | "merge" | "rebase"));
+        self.lines(
+            &[
+                "git",
+                "branch",
+                "--no-color",
+                "--sort=-committerdate",
+                "--format=%(HEAD) %(refname:short)",
+            ],
+            cwd,
+        )
+        .into_iter()
+        .take(MAX_ITEMS)
+        .map(|line| match line.strip_prefix("* ") {
+            Some(current) => {
+                let priority = if wants_current {
+                    95.0
+                } else if avoids_current {
+                    60.0
+                } else {
+                    76.0
+                };
+                Candidate::new(current, Kind::Arg)
+                    .described("Current branch")
+                    .with_priority(priority)
+            }
+            None => Candidate::new(line.as_str(), Kind::Arg)
+                .described("Branch")
+                .with_priority(75.0),
+        })
+        .collect()
+    }
+
+    fn native(&self, name: &str, cwd: &Path, tokens: &[String]) -> Vec<Candidate> {
         let named = |items: Vec<String>, description: &str, priority: f64| -> Vec<Candidate> {
             items
                 .into_iter()
@@ -424,35 +588,9 @@ impl Generators {
                 .collect()
         };
         match name {
-            "git:localBranches" => named(
-                self.lines(
-                    &[
-                        "git",
-                        "branch",
-                        "--no-color",
-                        "--sort=-committerdate",
-                        "--format=%(refname:short)",
-                    ],
-                    cwd,
-                ),
-                "Branch",
-                75.0,
-            ),
+            "git:localBranches" => self.local_branches(cwd, tokens),
             "git:remoteLocalBranches" | "git:localOrRemoteBranches" => {
-                let mut out = named(
-                    self.lines(
-                        &[
-                            "git",
-                            "branch",
-                            "--no-color",
-                            "--sort=-committerdate",
-                            "--format=%(refname:short)",
-                        ],
-                        cwd,
-                    ),
-                    "Branch",
-                    75.0,
-                );
+                let mut out = self.local_branches(cwd, tokens);
                 let remote: Vec<String> = self
                     .lines(
                         &[
@@ -498,8 +636,8 @@ impl Generators {
                 .collect(),
             "git:commits" => self.commits(cwd),
             "git:revs" | "git:treeish" => {
-                let mut out = self.native("git:localBranches", cwd);
-                out.extend(self.native("git:tags", cwd));
+                let mut out = self.native("git:localBranches", cwd, tokens);
+                out.extend(self.native("git:tags", cwd, tokens));
                 out.extend(self.commits(cwd));
                 out
             }
@@ -762,8 +900,16 @@ pub fn files(cwd: &Path, token: &str, shell: Shell, folders_only: bool) -> Vec<C
     };
     let show_hidden = base.starts_with('.');
 
-    let mut out: Vec<Candidate> = entries
-        .flatten()
+    // In a folder with more entries than can be offered, the ones matching
+    // what has been typed must be chosen before the list is cut, or the file
+    // being typed may be among those dropped.
+    let base_lower = base.to_lowercase();
+    let mut names: Vec<std::fs::DirEntry> = entries.flatten().take(MAX_SCANNED).collect();
+    if names.len() > MAX_ITEMS && !base_lower.is_empty() {
+        names.retain(|entry| entry.file_name().to_string_lossy().to_lowercase().contains(&base_lower));
+    }
+    let mut out: Vec<Candidate> = names
+        .into_iter()
         .take(MAX_ITEMS * 2)
         .filter_map(|entry| {
             let name = entry.file_name().to_string_lossy().into_owned();
@@ -998,6 +1144,85 @@ mod tests {
     }
 
     #[test]
+    fn a_deferred_fetch_is_left_out_until_it_has_been_made() {
+        struct Echo;
+        impl Runner for Echo {
+            fn run(&self, argv: &[String], _cwd: &Path) -> Option<String> {
+                Some(argv.join(" "))
+            }
+        }
+        let generators = Generators::new(Box::new(Echo));
+        generators.set_online(true);
+        let cwd = std::env::temp_dir();
+        let argv = || vec!["curl".to_string(), "x".to_string()];
+
+        let quick = Network::deferring();
+        assert_eq!(generators.run_for(argv(), &cwd, &quick), None);
+        assert!(quick.deferred() && quick.used());
+        // Commands that stay on this machine are never put off.
+        assert!(generators
+            .run_for(vec!["git".to_string(), "x".to_string()], &cwd, &quick)
+            .is_some());
+
+        let full = Network::default();
+        assert!(generators.run_for(argv(), &cwd, &full).is_some());
+        assert!(!full.deferred() && full.used());
+
+        // Once fetched, the answer is at hand and nothing is left to wait for.
+        let again = Network::deferring();
+        assert!(generators.run_for(argv(), &cwd, &again).is_some());
+        assert!(!again.deferred() && again.used());
+    }
+
+    #[test]
+    fn a_fetch_that_cannot_connect_pauses_fetching() {
+        use std::sync::atomic::AtomicUsize;
+        struct NoRoute(Arc<AtomicUsize>);
+        impl Runner for NoRoute {
+            fn run(&self, _argv: &[String], _cwd: &Path) -> Option<String> {
+                None
+            }
+            fn exec(&self, _argv: &[String], _cwd: &Path, _env: &EnvChanges) -> Output {
+                self.0.fetch_add(1, Ordering::Relaxed);
+                // What curl reports when it cannot resolve the host.
+                Output {
+                    status: 6,
+                    ..Output::default()
+                }
+            }
+        }
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let generators = Generators::new(Box::new(NoRoute(attempts.clone())));
+        generators.set_online(true);
+        let cwd = std::env::temp_dir();
+        let argv = |query: &str| vec!["curl".to_string(), query.to_string()];
+
+        let first = Network::default();
+        assert_eq!(generators.run_for(argv("a"), &cwd, &first), None);
+        assert!(first.unreachable());
+        // The next word is not tried, and is not waited for either.
+        let second = Network::deferring();
+        assert_eq!(generators.run_for(argv("ab"), &cwd, &second), None);
+        assert!(second.unreachable() && !second.deferred());
+        assert_eq!(attempts.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn a_refusal_by_the_service_is_not_a_missing_connection() {
+        let argv = vec!["curl".to_string()];
+        let ended = |status: i32, timed_out: bool| Output {
+            status,
+            timed_out,
+            ..Output::default()
+        };
+        assert!(could_not_connect(&argv, &ended(6, false)));
+        assert!(could_not_connect(&argv, &ended(1, true)));
+        // `curl -f` on a 404.
+        assert!(!could_not_connect(&argv, &ended(22, false)));
+        assert!(!could_not_connect(&argv, &ended(0, false)));
+    }
+
+    #[test]
     fn parses_git_status_lines() {
         let out = parse_git_status(" M src/main.rs\n?? new file.txt\nR  old.rs -> new.rs\n");
         let names: Vec<&str> = out.iter().map(|c| c.name.as_str()).collect();
@@ -1052,6 +1277,20 @@ mod tests {
 
         assert_eq!(files(&dir, ".", Shell::Zsh, false).len(), 3);
         assert_eq!(files(&dir, "", Shell::Zsh, true).len(), 1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn finds_the_typed_file_in_a_folder_too_large_to_list() {
+        let dir = std::env::temp_dir().join(format!("hiruzen-big-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for i in 0..(MAX_ITEMS * 2 + 500) {
+            std::fs::write(dir.join(format!("file-{i}")), "").unwrap();
+        }
+        let wanted = format!("file-{}", MAX_ITEMS * 2 + 499);
+        let found = files(&dir, &wanted, Shell::Zsh, false);
+        assert!(found.iter().any(|c| c.name == wanted), "{} candidates", found.len());
         let _ = std::fs::remove_dir_all(&dir);
     }
 

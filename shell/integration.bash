@@ -34,6 +34,14 @@ __hiruzen_escape() {
 	builtin printf '%s\n' "${out}"
 }
 
+# Reports how the command just run ended. It must run before anything else
+# at the prompt, and it hands the same status on to whatever runs next.
+__hiruzen_exit_status() {
+	builtin local __hiruzen_status=$?
+	builtin printf '\e]7391;EXIT;%s\a' "$__hiruzen_status"
+	builtin return "$__hiruzen_status"
+}
+
 __hiruzen_precmd() {
 	builtin printf '\e]7391;%sCWD;%s\a' "${HIRUZEN_REMOTE:+R}" "$(__hiruzen_escape "$PWD")"
 	# Re-wrap whenever something (a theme, the user) has replaced PS1.
@@ -43,17 +51,39 @@ __hiruzen_precmd() {
 	fi
 }
 
+# Tell hiruzen the aliases and functions this shell defines, so it can
+# suggest them and complete an alias as the command it stands for.
+if [[ -z "${HIRUZEN_REMOTE:-}" ]]; then
+	while IFS= builtin read -r __hiruzen_line; do
+		__hiruzen_line=${__hiruzen_line#alias }
+		__hiruzen_name=${__hiruzen_line%%=*}
+		__hiruzen_value=${__hiruzen_line#*=}
+		__hiruzen_value=${__hiruzen_value#\'}
+		__hiruzen_value=${__hiruzen_value%\'}
+		__hiruzen_value=${__hiruzen_value//\'\\\'\'/\'}
+		[[ "$__hiruzen_name" == *[$' \e\a']* || "$__hiruzen_value" == *[$'\e\a']* ]] && continue
+		builtin printf '\e]7391;ALIAS;%s=%s\a' "$__hiruzen_name" "$__hiruzen_value"
+	done < <(builtin alias 2>/dev/null)
+	builtin printf '\e]7391;NAMES;%s\a' "$(builtin compgen -A function | builtin command grep -v '^[_.+-]' | builtin command tr '\n' ' ')"
+	builtin unset __hiruzen_line __hiruzen_name __hiruzen_value
+fi
+
 # Run after the user's PROMPT_COMMAND, which may be a string or (bash 5.1+) an array.
 if [[ "$(builtin declare -p PROMPT_COMMAND 2>/dev/null)" == "declare -a"* ]]; then
-	PROMPT_COMMAND+=(__hiruzen_precmd)
+	PROMPT_COMMAND=(__hiruzen_exit_status "${PROMPT_COMMAND[@]}" __hiruzen_precmd)
 elif [[ -n "${PROMPT_COMMAND:-}" ]]; then
 	__hiruzen_user_prompt_command=$PROMPT_COMMAND
 	__hiruzen_prompt_command() {
+		__hiruzen_exit_status
 		builtin local __hiruzen_status=$?
 		builtin eval "$(builtin printf '(exit %d)' "$__hiruzen_status"); $__hiruzen_user_prompt_command"
 		__hiruzen_precmd
 	}
 	PROMPT_COMMAND=__hiruzen_prompt_command
 else
-	PROMPT_COMMAND=__hiruzen_precmd
+	__hiruzen_prompt_command() {
+		__hiruzen_exit_status
+		__hiruzen_precmd
+	}
+	PROMPT_COMMAND=__hiruzen_prompt_command
 fi

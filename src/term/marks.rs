@@ -6,7 +6,7 @@
 //! before it have been applied to the screen.
 
 const PREFIX: &[u8] = b"\x1b]7391;";
-const MAX_PAYLOAD: usize = 8192;
+const MAX_PAYLOAD: usize = 256 * 1024;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Mark {
@@ -14,6 +14,12 @@ pub enum Mark {
     PromptStart,
     /// The prompt is drawn; what follows on screen is the user's command.
     PromptEnd,
+    /// The exit status of the command that just finished.
+    Exit(i32),
+    /// An alias the shell defines, and what it stands for.
+    Alias(String, String),
+    /// Names of functions the shell defines.
+    Names(Vec<String>),
     /// The shell's working directory.
     Cwd(String),
     /// The working directory of a shell on another machine, reached with
@@ -115,6 +121,11 @@ impl Scanner {
         let mark = match text.split_once(';') {
             None if text == "PS" => Some(Mark::PromptStart),
             None if text == "PE" => Some(Mark::PromptEnd),
+            Some(("EXIT", status)) => status.trim().parse().ok().map(Mark::Exit),
+            Some(("ALIAS", pair)) => pair
+                .split_once('=')
+                .map(|(name, value)| Mark::Alias(name.to_string(), value.to_string())),
+            Some(("NAMES", names)) => Some(Mark::Names(names.split_whitespace().map(str::to_string).collect())),
             Some(("CWD", path)) => Some(Mark::Cwd(unescape(path))),
             Some(("RCWD", path)) => Some(Mark::RemoteCwd(unescape(path))),
             _ => None,
@@ -195,6 +206,19 @@ mod tests {
         assert_eq!(
             scanner.feed(b"\x1b\x1b]7391;PE\x07"),
             vec![Chunk::Data(b"\x1b".to_vec()), Chunk::Mark(Mark::PromptEnd)]
+        );
+    }
+
+    #[test]
+    fn reads_aliases_and_function_names() {
+        let mut scanner = Scanner::default();
+        let chunks = scanner.feed(b"\x1b]7391;ALIAS;gco=git checkout; echo done\x07\x1b]7391;NAMES;nvm  mkcd\x07");
+        assert_eq!(
+            chunks,
+            vec![
+                Chunk::Mark(Mark::Alias("gco".to_string(), "git checkout; echo done".to_string())),
+                Chunk::Mark(Mark::Names(vec!["nvm".to_string(), "mkcd".to_string()])),
+            ]
         );
     }
 

@@ -313,6 +313,21 @@ impl Shell {
                     .unwrap_or_else(|| PathBuf::from("/"));
                 env.push(("HIRUZEN_USER_ZDOTDIR".to_string(), user.to_string_lossy().into_owned()));
                 env.push(("ZDOTDIR".to_string(), scratch.to_string_lossy().into_owned()));
+                let settings = crate::settings::Settings::load();
+                if settings.prompt {
+                    env.push(("HIRUZEN_PROMPT".to_string(), "1".to_string()));
+                    if settings.prompt_host {
+                        env.push(("HIRUZEN_PROMPT_HOST".to_string(), "1".to_string()));
+                    }
+                    env.push((
+                        "HIRUZEN_PROMPT_DIRECTORY".to_string(),
+                        settings.prompt_directory_length.to_string(),
+                    ));
+                    env.push((
+                        "HIRUZEN_PROMPT_BRANCH".to_string(),
+                        settings.prompt_branch_length.to_string(),
+                    ));
+                }
                 if login {
                     args.push("--login".to_string());
                 }

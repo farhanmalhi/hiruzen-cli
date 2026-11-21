@@ -16,7 +16,7 @@
         { "name": "docs", "description": "Describe every setting" },
         { "name": "open", "description": "Open the settings file" }
       ],
-      "options": [ { "name": ["-d", "--delete"], "description": "Return a setting to its default", "args": { "name": "key", "suggestions": ["autocomplete.disable", "autocomplete.theme", "autocomplete.height", "autocomplete.descriptions", "autocomplete.fuzzySearch", "autocomplete.history", "autocomplete.disableForCommands", "autocomplete.onlineSuggestions", "keys.accept", "keys.next", "keys.previous", "keys.dismiss", "autocomplete.enterAccepts"] } } ],
+      "options": [ { "name": ["-d", "--delete"], "description": "Return a setting to its default", "args": { "name": "key", "suggestions": ["autocomplete.disable", "autocomplete.theme", "autocomplete.height", "autocomplete.descriptions", "autocomplete.fuzzySearch", "autocomplete.history", "autocomplete.disableForCommands", "autocomplete.onlineSuggestions", "keys.accept", "keys.next", "keys.previous", "keys.dismiss", "autocomplete.enterAccepts", "prompt.enable", "prompt.showHost", "prompt.directoryLength", "prompt.branchLength"] } } ],
       "args": [
         { "name": "key", "isOptional": true, "suggestions": [
           { "name": "autocomplete.disable", "description": "Turn suggestions off" },
@@ -31,7 +31,11 @@
           { "name": "keys.next", "description": "Keys that move the highlight down" },
           { "name": "keys.previous", "description": "Keys that move the highlight up" },
           { "name": "keys.dismiss", "description": "Keys that hide suggestions" },
-          { "name": "autocomplete.enterAccepts", "description": "Enter inserts the highlighted suggestion" }
+          { "name": "autocomplete.enterAccepts", "description": "Enter inserts the highlighted suggestion" },
+          { "name": "prompt.enable", "description": "Dress up zsh's stock prompt" },
+          { "name": "prompt.showHost", "description": "Start the prompt with you@host" },
+          { "name": "prompt.directoryLength", "description": "Longest directory name the prompt shows" },
+          { "name": "prompt.branchLength", "description": "Longest branch name the prompt shows" }
         ] },
         { "name": "value", "isOptional": true, "suggestions": ["true", "false"] }
       ] },

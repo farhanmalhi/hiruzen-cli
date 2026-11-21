@@ -11,7 +11,12 @@ function Global:__Hiruzen-Escape([string]$value) {
 }
 
 function Global:Prompt() {
-    $Result = "$([char]0x1b)]7391;PS`a"
+    # How the command just run ended. This must be the first statement:
+    # anything before it would replace the value of $?.
+    $Succeeded = $?
+    $ExitStatus = if ($Succeeded) { 0 } elseif ($LASTEXITCODE) { $LASTEXITCODE } else { 1 }
+    $Result = "$([char]0x1b)]7391;EXIT;$ExitStatus`a"
+    $Result += "$([char]0x1b)]7391;PS`a"
     $Result += $Global:__HiruzenOriginalPrompt.Invoke()
     $Result += "$([char]0x1b)]7391;PE`a"
     if ($pwd.Provider.Name -eq 'FileSystem') {

@@ -13,6 +13,12 @@ const MAX_NAME_WIDTH: usize = 36;
 const MAX_DESCRIPTION_WIDTH: usize = 48;
 /// Narrowest terminal the dropdown is drawn in.
 const MIN_COLS: usize = 20;
+/// Shown while suggestions are being fetched from the network.
+pub const LOADING: &str = "Searching online…";
+/// Shown when they could not be, over what this machine knows by itself.
+pub const OFFLINE: &str = "No internet: local suggestions only";
+/// The same, when this machine knows nothing to list.
+pub const OFFLINE_EMPTY: &str = "No internet connection";
 
 const RESET: &str = "\x1b[0m";
 
@@ -52,6 +58,9 @@ pub struct Request<'a> {
     pub selected: usize,
     /// Shown instead of a list when there are no items.
     pub hint: Option<&'a str>,
+    /// A line about the list as a whole, shown under it: that more is being
+    /// fetched, or could not be.
+    pub note: Option<&'a str>,
     pub cols: usize,
     pub rows: usize,
     pub cursor_row: usize,
@@ -107,6 +116,7 @@ pub fn layout(request: &Request) -> Option<Layout> {
         items,
         selected,
         hint,
+        note,
         cols,
         rows,
         cursor_row,
@@ -128,7 +138,7 @@ pub fn layout(request: &Request) -> Option<Layout> {
     }
 
     let (width, lines): (usize, Vec<String>) = if items.is_empty() {
-        let hint = hint?;
+        let hint = note.or(hint)?;
         let width = (hint.width() + 2).min(cols).min(MAX_DESCRIPTION_WIDTH + MAX_NAME_WIDTH);
         (
             width,
@@ -136,7 +146,13 @@ pub fn layout(request: &Request) -> Option<Layout> {
         )
     } else {
         let selected = selected.min(items.len() - 1);
-        let visible = style.max_visible.max(1).min(items.len()).min(room);
+        // The note takes a row of its own under the list, where there is one to spare.
+        let note = note.filter(|_| room > 1);
+        let visible = style
+            .max_visible
+            .max(1)
+            .min(items.len())
+            .min(room - usize::from(note.is_some()));
         // Scroll in whole pages so the list does not shift on every key press.
         let first = (selected / visible) * visible;
         let page = &items[first..(first + visible).min(items.len())];
@@ -180,7 +196,7 @@ pub fn layout(request: &Request) -> Option<Layout> {
 
         let more_above = first > 0;
         let more_below = first + page.len() < items.len();
-        let lines = page
+        let mut lines: Vec<String> = page
             .iter()
             .enumerate()
             .map(|(i, candidate)| {
@@ -211,6 +227,9 @@ pub fn layout(request: &Request) -> Option<Layout> {
                 line
             })
             .collect();
+        if let Some(note) = note {
+            lines.push(format!("{} {}{RESET}", theme.description, fit(note, width - 1)));
+        }
         (width, lines)
     };
 
@@ -269,6 +288,7 @@ mod tests {
             items,
             selected: 0,
             hint: None,
+            note: None,
             cols: 80,
             rows: 24,
             cursor_row,
@@ -342,6 +362,7 @@ mod tests {
             items: &[],
             selected: 0,
             hint: Some("message: the commit message"),
+            note: None,
             cols: 80,
             rows: 24,
             cursor_row: 0,
@@ -357,12 +378,38 @@ mod tests {
     }
 
     #[test]
+    fn says_when_more_suggestions_are_being_fetched() {
+        let list = items(&["react", "redux"]);
+        let mut req = request(&list, 3, 0);
+        req.note = Some(LOADING);
+        let with_items = layout(&req).unwrap();
+        assert_eq!(with_items.rows.len(), 3);
+        assert!(plain(&with_items.rows[2]).contains("Searching"));
+        for row in &with_items.rows {
+            assert_eq!(plain(row).width(), with_items.width);
+        }
+        // With nothing to list yet, the note is the whole dropdown.
+        req.items = &[];
+        let alone = layout(&req).unwrap();
+        assert_eq!(alone.rows.len(), 1);
+        assert_eq!(plain(&alone.rows[0]).trim(), LOADING);
+        // One free row: the suggestion matters more than the note.
+        let mut tight = request(&list, 22, 0);
+        tight.note = Some(OFFLINE);
+        tight.command_row = 1;
+        let tight = layout(&tight).unwrap();
+        assert_eq!(tight.rows.len(), 1);
+        assert!(plain(&tight.rows[0]).contains("react"));
+    }
+
+    #[test]
     fn hides_when_the_terminal_is_too_small() {
         let list = items(&["a"]);
         let req = Request {
             items: &list,
             selected: 0,
             hint: None,
+            note: None,
             cols: 10,
             rows: 24,
             cursor_row: 0,

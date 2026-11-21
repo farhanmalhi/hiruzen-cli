@@ -25,6 +25,9 @@ use crate::term::stream::Stream;
 
 /// How often the terminal size is checked for a change.
 const RESIZE_POLL: Duration = Duration::from_millis(120);
+/// How long typing must pause before suggestions are fetched from the
+/// network, so a word typed quickly is searched for once and not per letter.
+const FETCH_DELAY: Duration = Duration::from_millis(150);
 
 enum Event {
     Input(Vec<u8>),
@@ -150,6 +153,9 @@ struct Session {
     settings_stamp: Option<SystemTime>,
     /// The user has moved the highlight in the dropdown now showing.
     moved: bool,
+    /// The command just sent to the shell and where it was typed, kept
+    /// until the shell says how it ended.
+    pending: Option<(String, Option<PathBuf>)>,
     requests: Sender<CompletionRequest>,
     pty: Box<dyn Write + Send>,
 }
@@ -208,6 +214,15 @@ impl Session {
             items: &completion.items,
             selected: self.selected,
             hint: completion.hint.as_deref(),
+            note: if completion.loading {
+                Some(popup::LOADING)
+            } else if completion.offline && completion.items.is_empty() {
+                Some(popup::OFFLINE_EMPTY)
+            } else if completion.offline {
+                Some(popup::OFFLINE)
+            } else {
+                None
+            },
             cols: cols.into(),
             rows: rows.into(),
             cursor_row: cursor_row.into(),
@@ -248,6 +263,13 @@ impl Session {
         let mut out = self.erase();
         out.push_str(&self.draw());
         self.write_terminal(out.as_bytes());
+    }
+
+    /// Hands the command waiting for its exit status to the engine.
+    fn record_pending(&mut self, status: Option<i32>) {
+        if let Some((command, cwd)) = self.pending.take() {
+            self.engine.record(&command, cwd.as_deref(), status);
+        }
     }
 
     /// Reads the settings file and puts its values into effect.
@@ -354,7 +376,14 @@ impl Session {
                 Chunk::Mark(Mark::PromptStart) => {
                     self.anchor = None;
                 }
+                Chunk::Mark(Mark::Alias(name, value)) => self.engine.add_alias(name, value),
+                Chunk::Mark(Mark::Names(names)) => self.engine.add_functions(names),
+                Chunk::Mark(Mark::Exit(status)) => {
+                    self.record_pending(Some(status));
+                }
                 Chunk::Mark(Mark::PromptEnd) => {
+                    // A shell that does not report exit statuses.
+                    self.record_pending(None);
                     self.anchor = Some(self.screen.anchor());
                     self.dismissed = None;
                     self.browsing_history = false;
@@ -381,9 +410,12 @@ impl Session {
         self.write_terminal(&out);
     }
 
-    fn on_completed(&mut self, version: u64, result: Option<Completion>) {
+    fn on_completed(&mut self, version: u64, mut result: Option<Completion>) {
         if version != self.version {
             return;
+        }
+        if let (Some(completion), Some(previous)) = (result.as_mut(), self.completion.as_ref()) {
+            completion.carry_over(previous);
         }
         let (_, cursor_col) = self.screen.cursor();
         self.popup_col = result
@@ -443,8 +475,11 @@ impl Session {
         }
 
         if bytes.iter().any(|b| matches!(b, b'\r' | b'\n')) {
-            if let Some(line) = self.line.as_deref().filter(|line| !line.trim().is_empty()) {
-                self.engine.record(line);
+            if let Some(line) = self.line.clone().filter(|line| !line.trim().is_empty()) {
+                // Recorded once the shell reports how the command ended.
+                self.record_pending(None);
+                let cwd = (!self.remote).then(|| self.cwd.clone());
+                self.pending = Some((line, cwd));
             }
             self.leave_prompt();
             self.refresh();
@@ -599,21 +634,35 @@ pub fn run(shell: Shell, login: bool) -> Result<i32, String> {
     std::thread::spawn(move || {
         let engine = Arc::new(Engine::system(shell));
         let _ = engine_ready.send(engine.clone());
-        while let Ok(mut request) = pending.recv() {
+        let mut next = pending.recv().ok();
+        while let Some(mut request) = next.take() {
             // Only the newest request matters.
             while let Ok(newer) = pending.try_recv() {
                 request = newer;
             }
-            let result = engine.complete_at(&request.line, &request.cwd, request.remote);
-            if tx
-                .send(Event::Completed {
-                    version: request.version,
-                    result,
-                })
-                .is_err()
-            {
+            let version = request.version;
+            // What is known on this machine is shown at once. Anything a
+            // spec fetches from the network follows when it arrives.
+            let result = engine.complete_quick(&request.line, &request.cwd, request.remote);
+            let loading = result.as_ref().is_some_and(|completion| completion.loading);
+            if tx.send(Event::Completed { version, result }).is_err() {
                 break;
             }
+            if loading {
+                match pending.recv_timeout(FETCH_DELAY) {
+                    Ok(newer) => {
+                        next = Some(newer);
+                        continue;
+                    }
+                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                    Err(mpsc::RecvTimeoutError::Timeout) => {}
+                }
+                let result = engine.complete_at(&request.line, &request.cwd, request.remote);
+                if tx.send(Event::Completed { version, result }).is_err() {
+                    break;
+                }
+            }
+            next = pending.recv().ok();
         }
     });
     let engine = engine_slot
@@ -640,6 +689,7 @@ pub fn run(shell: Shell, login: bool) -> Result<i32, String> {
         settings: Settings::default(),
         settings_stamp: None,
         moved: false,
+        pending: None,
         requests,
         pty: writer,
     };
@@ -668,6 +718,7 @@ pub fn run(shell: Shell, login: bool) -> Result<i32, String> {
         }
     };
 
+    session.record_pending(None);
     let erase = session.erase();
     session.write_terminal(erase.as_bytes());
     session.write_terminal(b"\x1b[0m\x1b[?25h");

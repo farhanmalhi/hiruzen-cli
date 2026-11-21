@@ -76,7 +76,7 @@ pub const DEFINITIONS: &[Definition] = &[
     Definition {
         key: "autocomplete.onlineSuggestions",
         kind: ValueKind::Bool,
-        default: "false",
+        default: "true",
         help: "Let specs fetch suggestions from the network, such as package names from a registry",
     },
     Definition {
@@ -106,8 +106,32 @@ pub const DEFINITIONS: &[Definition] = &[
     Definition {
         key: "autocomplete.enterAccepts",
         kind: ValueKind::Bool,
-        default: "false",
+        default: "true",
         help: "Enter inserts the highlighted suggestion once you have moved the highlight",
+    },
+    Definition {
+        key: "prompt.enable",
+        kind: ValueKind::Bool,
+        default: "true",
+        help: "Give zsh's stock prompt colours, a short directory and the git branch (new sessions)",
+    },
+    Definition {
+        key: "prompt.showHost",
+        kind: ValueKind::Bool,
+        default: "false",
+        help: "Start the prompt with your user and machine name, as in you@host",
+    },
+    Definition {
+        key: "prompt.directoryLength",
+        kind: ValueKind::Int(4, 80),
+        default: "24",
+        help: "Longest directory name the prompt shows before cutting out its middle",
+    },
+    Definition {
+        key: "prompt.branchLength",
+        kind: ValueKind::Int(4, 80),
+        default: "80",
+        help: "Longest branch name the prompt shows; a narrow window shortens it sooner",
     },
 ];
 
@@ -207,6 +231,10 @@ pub struct Settings {
     pub enter_accepts: bool,
     pub online: bool,
     pub keys: Bindings,
+    pub prompt: bool,
+    pub prompt_host: bool,
+    pub prompt_directory_length: usize,
+    pub prompt_branch_length: usize,
 }
 
 /// The byte sequences bound to each dropdown action.
@@ -251,8 +279,8 @@ impl Settings {
                 .as_array()
                 .map(|items| items.iter().filter_map(|i| i.as_str().map(str::to_string)).collect())
                 .unwrap_or_default(),
-            enter_accepts: value("autocomplete.enterAccepts").as_bool().unwrap_or(false),
-            online: value("autocomplete.onlineSuggestions").as_bool().unwrap_or(false),
+            enter_accepts: value("autocomplete.enterAccepts").as_bool().unwrap_or(true),
+            online: value("autocomplete.onlineSuggestions").as_bool().unwrap_or(true),
             keys: {
                 let bound = |key: &str| -> Vec<Vec<u8>> {
                     let names: Vec<String> = value(key)
@@ -268,6 +296,10 @@ impl Settings {
                     dismiss: bound("keys.dismiss"),
                 }
             },
+            prompt: value("prompt.enable").as_bool().unwrap_or(true),
+            prompt_host: value("prompt.showHost").as_bool().unwrap_or(false),
+            prompt_directory_length: value("prompt.directoryLength").as_u64().unwrap_or(24) as usize,
+            prompt_branch_length: value("prompt.branchLength").as_u64().unwrap_or(80) as usize,
         }
     }
 

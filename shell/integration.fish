@@ -11,6 +11,15 @@ function __hiruzen_escape
 	| string split \n | string join '\x0a'
 end
 
+# Tell hiruzen the functions this shell defines (fish aliases are functions).
+if not set -q HIRUZEN_REMOTE
+	printf '\e]7391;NAMES;%s\a' (functions -n | string replace -a ',' ' ' | string join ' ')
+end
+
+function __hiruzen_exit_status --on-event fish_postexec
+	printf '\e]7391;EXIT;%s\a' $status
+end
+
 function __hiruzen_update_cwd --on-event fish_prompt
 	set -q HIRUZEN_REMOTE; and set -l __hiruzen_where R
 	printf '\e]7391;%sCWD;%s\a' "$__hiruzen_where" (__hiruzen_escape "$PWD")

@@ -1,5 +1,9 @@
 # hiruzen-cli
 
+[![CI](https://github.com/farhanmalhi/hiruzen-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/farhanmalhi/hiruzen-cli/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/farhanmalhi/hiruzen-cli)](https://github.com/farhanmalhi/hiruzen-cli/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Dropdown autocomplete for your terminal. The command it installs is `hiruzen`.
 As you type a command, hiruzen shows
 what the next word can be (subcommands, options, branches, files, scripts),
@@ -13,11 +17,15 @@ $ git ch
 ```
 
 It is a single Rust binary with the completion specs embedded, so there is
-nothing else to install, and it makes no network requests. It runs on macOS
+nothing else to install. The only network requests are the registry searches
+described under [Privacy and security](#privacy-and-security), which one
+setting turns off. It runs on macOS
 and Linux with zsh, bash, fish and PowerShell. Windows (PowerShell, Git Bash,
 cmd) builds and passes its tests, but is
-[not yet tried in a live terminal](#what-has-been-tested). If hiruzen cannot
+[not yet tried in a live terminal](docs/testing.md). If hiruzen cannot
 start, your shell opens as normal.
+
+Website: <https://hiruzen.farhanmalhi.com/>
 
 ## Contents
 
@@ -27,18 +35,17 @@ start, your shell opens as normal.
 - [Remote shells over SSH](#remote-shells-over-ssh)
 - [Scripts](#scripts)
 - [Plugins](#plugins)
-- [Measuring accuracy](#measuring-accuracy)
 - [Use with Claude Code](#use-with-claude-code)
-- [How it works](#how-it-works)
 - [Shell support](#shell-support)
 - [Privacy and security](#privacy-and-security)
 - [Limits](#limits)
 - [Troubleshooting](#troubleshooting)
 - [Uninstall](#uninstall)
-- [Development](#development)
+- [Documentation](#documentation)
 - [Scope](#scope)
-- [Licence](#licence)
+- [Contributing](#contributing)
 - [Credits](#credits)
+- [License](#license)
 
 ## Install
 
@@ -132,7 +139,7 @@ While suggestions are showing (these are the defaults; see
 | `Tab` | Accept the highlighted suggestion |
 | `Down` / `Up` | Move the highlight |
 | `Esc` | Hide suggestions for the current word |
-| `Enter` | Run the command as typed, without accepting a suggestion |
+| `Enter` | Insert the highlighted suggestion if you have moved the highlight; otherwise run the command as typed |
 
 `Up` on the first suggestion goes to your shell's history as usual. While you
 are browsing history with the arrow keys, suggestions stay hidden until you
@@ -223,14 +230,18 @@ hiruzen settings open                         # open the file in your editor
 | `autocomplete.height` | `8` | Most suggestions shown at once, from 1 to 20 |
 | `autocomplete.descriptions` | `true` | Show each suggestion's description beside it |
 | `autocomplete.fuzzySearch` | `true` | Match anywhere in a suggestion, not only at its start |
-| `autocomplete.history` | `true` | Rank and suggest using your shell history |
+| `autocomplete.history` | `true` | Rank and suggest using your shell history and hiruzen's own per-project record of what you run. `false` also stops the recording |
 | `autocomplete.disableForCommands` | none | Commands that get no suggestions, for example `ssh,mysql` |
-| `autocomplete.onlineSuggestions` | `false` | Let specs fetch suggestions from the network, such as package names from a registry. Off means what you type stays on your machine |
+| `autocomplete.onlineSuggestions` | `true` | Let specs fetch suggestions from the network, such as package names from a registry: `npm install -g rea` lists matching packages. The dropdown shows `Searching online…` while it waits, and `No internet` when there is no connection. `false` means what you type stays on your machine |
 | `keys.accept` | `tab` | Keys that insert the highlighted suggestion |
 | `keys.next` | `down` | Keys that move the highlight down |
 | `keys.previous` | `up` | Keys that move the highlight up |
 | `keys.dismiss` | `escape` | Keys that hide suggestions for the current word |
-| `autocomplete.enterAccepts` | `false` | Enter inserts the highlighted suggestion once you have moved the highlight |
+| `autocomplete.enterAccepts` | `true` | Enter inserts the highlighted suggestion once you have moved the highlight with Up or Down. Until you move it, Enter runs the command as typed. Set to `false` to make Enter always run the command |
+| `prompt.enable` | `true` | In zsh, replace the stock prompt with a coloured one that shows the directory and the git branch: `my-project (main) %`. With no branch checked out it shows the first seven characters of the commit. A prompt you or a theme set is never touched. Applies to new sessions |
+| `prompt.showHost` | `false` | Start that prompt with your user and machine name: `you@host my-project (main) %` |
+| `prompt.directoryLength` | `24` | Longest directory name the prompt shows, from 4 to 80. A longer name loses its middle: `my-very-long…oject-name-2` |
+| `prompt.branchLength` | `80` | Longest branch name the prompt shows, from 4 to 80. The branch is shown whole unless the prompt would fill more than three quarters of the window; then it loses its middle: `feature/long-b…for-user-auth` |
 
 `hiruzen theme --list` previews every theme, and `hiruzen theme nord` selects
 one.
@@ -321,30 +332,14 @@ hiruzen plugins update                        # git pull the cloned ones
 hiruzen plugins remove zsh-autosuggestions
 ```
 
-Adding from a URL runs `git clone`, which is the one place a hiruzen command
-uses the network, and only because you asked it to. Plugins load through the
+Adding from a URL runs `git clone`, which uses the network because you asked
+it to. Plugins load through the
 `hiruzen init` line, so that line (or `hiruzen install`) must be in place. For
 each shell hiruzen loads the plugin's conventional entry file:
 `<name>.plugin.zsh` for zsh, `<name>.plugin.bash` or `<name>.sh` for bash,
 `conf.d/*.fish` for fish, `<name>.psm1` or `<name>.ps1` for PowerShell.
 Removing a plugin deletes only a directory hiruzen cloned; one added from a
 local path is left untouched.
-
-## Measuring accuracy
-
-`hiruzen evaluate` measures how good the suggestions are for you. It learns
-from the older four fifths of your shell history, replays the newest fifth
-word by word, and reports how often the word you really typed next was the
-first suggestion, in the top three, or in the top eight. It needs at least
-200 commands of history, prints totals only, and runs no commands.
-
-Suggestions cannot always be right: where several words are valid, hiruzen
-ranks them by the spec's priority and by what you have typed in the same
-position before. On the one history this has been measured against (275
-commands, a small sample), the right command name was first 69% of the time
-after two letters, and the right next word was first 52% of the time after
-two letters and in the top eight 49% of the time with nothing typed. Live
-values such as branches are not counted in that test, so real use is higher.
 
 ## Use with Claude Code
 
@@ -370,36 +365,6 @@ On Claude Code older than 2.1.275, use two steps:
 hiruzen also completes the `claude` command itself in your terminal: its
 options, subcommands, and values such as `--permission-mode`.
 
-## How it works
-
-hiruzen starts your shell inside a pseudo-terminal and passes everything
-through to your real terminal. A small integration script, loaded after your
-own startup files, marks where the prompt ends so hiruzen can read the command
-you are typing. It draws the dropdown over the shell's output and restores
-what was underneath before the shell prints again, so the shell never sees a
-changed screen.
-
-Suggestions come from three sources, ranked together:
-
-| Source | What it gives | Example |
-| --- | --- | --- |
-| Command specs | The valid subcommands, options and arguments of more than 700 command-line tools | `git commit --am` suggests `--amend` |
-| Live context | Values from your machine, read when needed | `git checkout ` lists your branches; `npm run ` lists the scripts in `package.json` |
-| Your history | What you actually run, which moves your habitual choices to the top | If you always `git cherry-pick`, it outranks `checkout` after `git ch` |
-
-For a command with no spec, suggestions come from your history and the files
-in the current directory.
-
-What you type is matched in four ways, best first: exact prefix,
-case-insensitive prefix, substring, then letters in order (`ch` matches
-`branch` and `fetch`). Within each group, suggestions are ordered by the
-spec's own priority plus how often you have used them in the same context.
-A single typed letter matches prefixes only.
-
-The specs are 1,440 files converted from Fig's spec library. They cover 704
-commands, plus separate specs for the services of large tools such as `aws`,
-`az` and `gcloud`.
-
 ## Shell support
 
 | Shell | Platforms | History read from | Notes |
@@ -411,31 +376,24 @@ commands, plus separate specs for the services of large tools such as `aws`,
 | Windows PowerShell 5 (`powershell`) | Windows | PSReadLine's `ConsoleHost_history.txt` | |
 | cmd | Windows | none | Suggestions come from specs and live context only |
 
-### What has been tested
-
-| Platform | Shell | Status |
-| --- | --- | --- |
-| macOS (Apple silicon) | zsh 5.9, bash 3.2 | Tested in live sessions |
-| Linux (arm64, Debian 12) | bash 5.2, zsh 5.9, fish 3.6, PowerShell 7.4 | Tested in live sessions |
-| macOS | fish, PowerShell 7 | Not tested; the same scripts pass on Linux |
-| Windows | PowerShell 7, Windows PowerShell 5, Git Bash, cmd | Builds and passes the unit tests in CI on Windows; the dropdown has not yet been tried in a live Windows terminal |
-
-hiruzen has also been run inside tmux on Linux, and `hiruzen ssh` against
-remote bash, zsh and fish on a local test server. It has not been tried over
-SSH to a real server or through a jump host.
-
-The unit tests pass on macOS, Linux and Windows. Until the dropdown has been
-used in a real Windows terminal, treat Windows support as experimental.
+What has been tested on each platform, and what has not, is in
+[docs/testing.md](docs/testing.md).
 
 ## Privacy and security
 
-- hiruzen itself makes no network requests and sends nothing anywhere. The
-  specs are inside the binary.
-- By default, spec commands that exist to fetch from the network (`curl`,
-  `wget` and similar) are refused, so nothing you type is sent to a package
-  registry or search service. Turning on `autocomplete.onlineSuggestions`
-  allows them: `npm install reac` then searches the npm registry, which
-  means the word you are typing is sent to that service.
+- hiruzen has no servers and collects nothing. The specs are inside the
+  binary.
+- Some specs look a word up online: `npm install reac` searches the npm
+  registry for package names, and `cargo add` searches crates.io. This is on
+  by default, and it means the word you are typing in that position is sent
+  to that service. Nothing else on the command line is sent.
+- To keep everything on your machine, run
+  `hiruzen settings autocomplete.onlineSuggestions false`. Spec commands that
+  exist to fetch from the network (`curl`, `wget` and similar) are then
+  refused.
+- Without a connection the dropdown says `No internet` and lists what your
+  machine knows: options, files and your history. hiruzen then waits 20
+  seconds before it tries the network again, so typing is not slowed.
 - When online suggestions are on, hiruzen adds a User-Agent of
   `hiruzen/<version>` and its repository address to the `curl` calls specs
   make, unless the spec sets its own. Some services, crates.io among them,
@@ -443,9 +401,17 @@ used in a real Windows terminal, treat Windows support as experimental.
 - A tool's own listing command is always allowed, and may contact that
   tool's service: `gh` asks GitHub for your repositories, `kubectl` asks your
   cluster. hiruzen cannot tell which tools do this.
-- History is read, never written. hiruzen reads the last 20,000 lines of
-  your shell's history file at startup. It keeps commands you run during a
-  session in memory only, and stores nothing on disk.
+- Your shell's history file is read, never written. hiruzen reads its last
+  20,000 lines at startup to learn which commands and subcommands you use.
+- hiruzen keeps its own record of the commands you run, in `history.tsv` in
+  its settings directory, readable only by you. Each line holds the command,
+  the project it ran in, the time, which terminal it came from, and its exit
+  status. Shell history has none of the last four, and they are what let
+  suggestions follow the project you are in, ignore mistyped commands, and
+  learn which command you usually run after another. The record holds up to
+  20,000 commands. A command typed with a leading space is not recorded, and
+  setting `autocomplete.history` to `false` stops both the reading and the
+  recording. Delete the file to forget everything.
 - It runs local commands as you type. Live suggestions come from running
   read-only commands in the current directory: `git` to list branches, tags
   and changed files, and the listing commands that a tool's spec names (for
@@ -477,10 +443,13 @@ used in a real Windows terminal, treat Windows support as experimental.
 - Live suggestions depend on the tool being installed and able to answer.
   Kubernetes resource names, for example, need a reachable cluster, and a
   command that takes longer than 3 seconds gives no suggestions.
-- Suggestions that a spec fetches from the network are not offered unless
-  you turn on `autocomplete.onlineSuggestions`. Six tools in the library (`az`, `heroku`,
+- Six tools in the library (`az`, `heroku`,
   `shopify`, `fig`, `infracost` and `@usermn/sdc`) build their whole spec in
   code at run time; hiruzen does not do that, so they have no spec.
+- In PowerShell, accepting a file name that contains a space inserts it in a
+  form PowerShell reads as two arguments. Type the quotes yourself for now.
+- Aliases are understood in zsh and bash, and functions in zsh, bash and
+  fish. PowerShell aliases and functions are not reported yet.
 - Nushell, Xonsh and other shells not listed above are not supported.
 
 ## Troubleshooting
@@ -508,82 +477,31 @@ used in a real Windows terminal, treat Windows support as experimental.
 3. Delete the settings directory if you changed any settings
    (`~/.config/hiruzen`, or `%APPDATA%\hiruzen` on Windows).
 
-## Development
+## Documentation
 
-```sh
-cargo build                              # debug build
-cargo run                                # start a session with the debug build
-cargo test                               # unit tests, including parsing every embedded spec
-cargo clippy --locked -- -D warnings     # lints; CI fails on any warning
-```
-
-CI builds, tests and lints every push to `main` and every pull request on
-Ubuntu, macOS and Windows, so changes must pass on all three.
-
-### Source layout
-
-| Path | Contents |
+| Document | What it covers |
 | --- | --- |
-| `src/main.rs` | Command-line parsing and the `init` and `complete` commands |
-| `src/engine/` | Tokenizer, spec walker, generators (live context), history ranking |
-| `src/specs.rs` | Spec model and the embedded archive reader |
-| `src/term/` | Screen model, dropdown layout, prompt markers, the pseudo-terminal session |
-| `src/shell.rs`, `shell/` | Per-shell launch logic and integration scripts |
-| `specs/specs.bin` | The embedded spec archive (generated, committed) |
-| `tools/specgen/` | Converts the Fig spec library into `specs/specs.bin` |
-| `tools/helpgen/` | Builds a spec from a tool's `--help` output, for tools Fig does not cover (used for `specs/claude.json`) |
-| `specs/hiruzen.json`, `specs/claude.json` | Specs embedded in addition to the Fig library |
-| `claude-plugin/`, `.claude-plugin/` | The Claude Code plugin and its marketplace entry |
-
-### Updating the specs
-
-`specs/specs.bin` is generated from
-[@withfig/autocomplete](https://github.com/withfig/autocomplete) and committed,
-so building hiruzen does not need Node. To regenerate it you need Node 22.15
-or newer:
-
-```sh
-cd tools/specgen
-npm install
-npm run build
-```
-
-To move to a newer spec library, change the `@withfig/autocomplete` version in
-`tools/specgen/package.json` first. Run `cargo test` afterwards: it checks that
-every spec in the new archive still parses.
-
-### Releasing
-
-Releases are built by [dist](https://axodotdev.github.io/cargo-dist/); its
-settings are in `dist-workspace.toml`, and `.github/workflows/release.yml` is
-generated from them (run `dist generate` after changing the settings).
-
-1. Set the new `version` in `Cargo.toml` and run `cargo build` to update
-   `Cargo.lock`.
-2. Move the entries under `Unreleased` in `CHANGELOG.md` to a new
-   `## [x.y.z] - date` heading. That section becomes the release notes.
-3. Commit, then tag and push: `git tag v0.2.0 && git push origin main v0.2.0`.
-
-The tag starts the release workflow. It builds every target, creates the
-GitHub Release with the archives, checksums and installer scripts, and pushes
-the Homebrew formula to `farhanmalhi/homebrew-tap`. The tag must match the `version` in
-`Cargo.toml`, or the workflow stops with nothing to release. A version with a
-suffix, such as `0.2.0-rc.1` tagged `v0.2.0-rc.1`, makes a prerelease and
-leaves the tap alone, which is the way to try the workflow out; it takes its
-release notes from the `0.2.0` section of the changelog.
+| [How hiruzen works](docs/how-it-works.md) | Where suggestions come from, how they are matched and ranked, and what hiruzen learns from you |
+| [Measuring accuracy](docs/accuracy.md) | `hiruzen evaluate`, the results so far, and how they compare with published research |
+| [What has been tested](docs/testing.md) | Platforms and shells tried, the edge-case suite, and what is still untested |
+| [Changelog](CHANGELOG.md) | What changed in each release |
+| [Security policy](SECURITY.md) | Supported versions and how to report a vulnerability |
 
 ## Scope
 
 hiruzen does one thing: autocomplete. It reuses the spec library from Fig
 (later Amazon Q Developer CLI) but is not a replacement for the rest of that
 product. It has no dotfile sync, scripts, plugin store, AI command
-generation, accounts, cloud sync or team features, because hiruzen is fully
-offline by default. Settings, themes, saved scripts, shell plugins, a doctor
+generation, accounts, cloud sync or team features: hiruzen has no service
+behind it and keeps everything on your machine. Settings, themes, saved scripts, shell plugins, a doctor
 and shell integration management are built in, and work locally.
 
-## Licence
+## Contributing
 
-MIT; see [LICENSE](LICENSE).
+Contributions are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers how to
+report a problem, how to send a change, the development setup, the source
+layout and how releases are made. `hiruzen issue` opens a bug report with
+your system details filled in.
 
 ## Credits
 
@@ -591,3 +509,7 @@ The completion specs come from Fig's open-source spec library, and the
 approach and shell integration scripts are adapted from Microsoft's
 inshellisense. Both are MIT licensed; see
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## License
+
+[MIT](LICENSE) © The hiruzen authors.

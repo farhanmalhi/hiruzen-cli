@@ -584,16 +584,32 @@ struct Tally {
     top1: usize,
     top3: usize,
     top8: usize,
+    /// Cases where the right word appeared anywhere in the suggestions.
+    offered: usize,
 }
 
 impl Tally {
     fn add(&mut self, rank: Option<usize>) {
         self.cases += 1;
         if let Some(rank) = rank {
+            self.offered += 1;
             self.top1 += usize::from(rank < 1);
             self.top3 += usize::from(rank < 3);
             self.top8 += usize::from(rank < 8);
         }
+    }
+
+    /// The same counts restricted to the cases where the right word was
+    /// offered at all: how good the ordering is, apart from what is knowable.
+    fn ranking_line(&self, label: &str) -> String {
+        let percent = |n: usize| 100.0 * n as f64 / self.offered.max(1) as f64;
+        format!(
+            "{label:<44} {:>6} cases   first {:>5.1}%   top 3 {:>5.1}%   top 8 {:>5.1}%",
+            self.offered,
+            percent(self.top1),
+            percent(self.top3),
+            percent(self.top8)
+        )
     }
 
     fn line(&self, label: &str) -> String {
@@ -621,13 +637,35 @@ pub fn evaluate(args: &[String]) -> Result<i32, String> {
     use crate::engine::{tokenizer, Engine, Options};
 
     let mut options = Options::default();
-    if let [flag, value] = args {
-        if flag == "--boost" {
-            options.history_boost = value.parse().map_err(|_| "--boost takes a number".to_string())?;
+    // A file of commands, one per line and oldest first, to use in place of
+    // the shell's history: another person's, or a research data set.
+    let mut file: Option<PathBuf> = None;
+    for pair in args.chunks(2) {
+        let [flag, value] = pair else {
+            return Err("usage: hiruzen evaluate [--file PATH] [--boost N] [--sequence N]".to_string());
+        };
+        if flag == "--file" {
+            file = Some(PathBuf::from(value));
+            continue;
+        }
+        let number: f64 = value.parse().map_err(|_| format!("{flag} takes a number"))?;
+        match flag.as_str() {
+            "--boost" => options.history_boost = number,
+            "--sequence" => options.sequence_weight = number,
+            _ => return Err("usage: hiruzen evaluate [--file PATH] [--boost N] [--sequence N]".to_string()),
         }
     }
     let shell = Shell::detect();
-    let commands = History::commands(shell);
+    let commands: Vec<String> = match &file {
+        Some(path) => std::fs::read_to_string(path)
+            .map_err(|e| format!("cannot read {}: {e}", path.display()))?
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .map(str::to_string)
+            .collect(),
+        None => History::commands(shell),
+    };
     if commands.len() < 200 {
         return Err(format!(
             "{} history holds {} commands; at least 200 are needed for a meaningful result",
@@ -645,14 +683,20 @@ pub fn evaluate(args: &[String]) -> Result<i32, String> {
     engine.set_options(options);
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
 
+    let timings = std::cell::RefCell::new(Vec::<std::time::Duration>::new());
     let rank_of = |line: &str, target: &str| -> Option<usize> {
-        let completion = engine.complete(line, &cwd)?;
+        let started = std::time::Instant::now();
+        let completion = engine.complete(line, &cwd);
+        timings.borrow_mut().push(started.elapsed());
+        let completion = completion?;
         completion
             .items
             .iter()
             .position(|item| item.name == target || item.aliases.iter().any(|alias| alias == target))
     };
     let (mut name_typed, mut next_blank, mut next_typed) = (Tally::default(), Tally::default(), Tally::default());
+    // Why the next word was not among the top eight, with two letters typed.
+    let mut misses: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
     for command in test {
         let parsed = tokenizer::parse(command.trim(), shell);
         let mut words: Vec<String> = parsed.done.into_iter().map(|t| t.text).collect();
@@ -673,9 +717,28 @@ pub fn evaluate(args: &[String]) -> Result<i32, String> {
             let before = words[..i].join(" ");
             next_blank.add(rank_of(&format!("{before} "), &words[i]));
             if words[i].chars().count() > 2 {
-                next_typed.add(rank_of(&format!("{before} {}", typed(&words[i])), &words[i]));
+                let rank = rank_of(&format!("{before} {}", typed(&words[i])), &words[i]);
+                next_typed.add(rank);
+                if rank.is_none_or(|rank| rank >= 8) {
+                    let word = words[i].as_str();
+                    let reason = if rank.is_some() {
+                        "offered, but below the top eight"
+                    } else if word.starts_with('-') {
+                        "an option the spec does not list"
+                    } else if word.contains('/') || word.contains('.') || cwd.join(word).exists() {
+                        "a path, file name, URL or version"
+                    } else if word.chars().any(|c| c.is_ascii_digit()) {
+                        "a value containing digits (an id, port, hash or number)"
+                    } else {
+                        "free text or a name never typed here before"
+                    };
+                    *misses.entry(reason).or_default() += 1;
+                }
             }
         }
+        // As in real use, each command is learned from once it has been run,
+        // and becomes the "previous command" for the next one.
+        engine.record(command, None, None);
     }
     println!(
         "Learned from {} commands, tested on {} (history boost {}).",
@@ -683,9 +746,32 @@ pub fn evaluate(args: &[String]) -> Result<i32, String> {
         test.len(),
         engine_boost(&engine)
     );
+    let mut times = timings.into_inner();
+    times.sort();
+    if !times.is_empty() {
+        let at = |fraction: f64| times[((times.len() - 1) as f64 * fraction) as usize];
+        println!(
+            "Time to compute suggestions: median {:.2} ms, 95% under {:.2} ms, slowest {:.2} ms ({} measurements).",
+            at(0.5).as_secs_f64() * 1e3,
+            at(0.95).as_secs_f64() * 1e3,
+            at(1.0).as_secs_f64() * 1e3,
+            times.len()
+        );
+    }
     println!("{}", name_typed.line("Command name, after 2 letters"));
     println!("{}", next_blank.line("Next word, nothing typed"));
     println!("{}", next_typed.line("Next word, after 2 letters"));
+    println!("\nOf the cases where the right word was offered at all (how well suggestions are ordered):");
+    println!("{}", name_typed.ranking_line("Command name, after 2 letters"));
+    println!("{}", next_blank.ranking_line("Next word, nothing typed"));
+    println!("{}", next_typed.ranking_line("Next word, after 2 letters"));
+    println!();
+    if !misses.is_empty() {
+        println!("Next words not in the top eight after 2 letters, by kind:");
+        for (reason, count) in &misses {
+            println!("  {count:>5}  {reason}");
+        }
+    }
     println!("Live values (branches, files, containers) are not run here, so real use scores higher on those.");
     Ok(0)
 }

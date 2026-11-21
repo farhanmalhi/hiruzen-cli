@@ -6,6 +6,58 @@ All notable changes to hiruzen are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Suggestions follow the project you are in.** hiruzen now records the
+  commands you run together with the project (git repository) each ran in,
+  and ranks by that project's habits first. Values such as branch names are
+  only suggested from the project they were typed in.
+- **The dropdown says when it is searching online.** A word such as the
+  package in `npm install -g rea` is looked up in the registry. What hiruzen already
+  knows is now listed at once, with a `Searching online…` line under it
+  until the registry answers. The search starts when you pause typing, so a
+  word typed quickly is looked up once and not once per letter, and a word
+  already looked up in the last minute is not looked up again.
+- **The dropdown says when there is no internet.** If a search cannot reach
+  the network, the dropdown shows `No internet` and lists what your machine
+  knows. hiruzen waits 20 seconds before trying the network again.
+- **A better stock prompt in zsh.** If your prompt is the one zsh or macOS
+  ships, hiruzen now colours it, shows the git branch in brackets
+  (`my-project (main) %`) and leaves out your user and machine name. The
+  branch is shown whole unless the window is too narrow for it; a name that
+  is too long loses its middle. With no branch checked out it shows the
+  first seven characters of the commit. A prompt you or a theme set is left
+  as it is. Set `prompt.enable` to `false` to keep the stock prompt,
+  `prompt.showHost` to `true` to get `you@host` back, and
+  `prompt.directoryLength` or `prompt.branchLength` to change the lengths.
+
+- **Aliases and shell functions.** They are suggested as commands, and an
+  alias is completed as the command it stands for (zsh, bash and fish).
+- **Mistyped and failed commands.** The shells report each command's exit
+  status. A command that was not found is never learned, and a failed one
+  counts for less.
+- **The command you ran just before helps pick the next one.** On public
+  data from 50 users this raised the right command being the first
+  suggestion from 91.2% to 96.8%, with two letters typed.
+- **`hiruzen evaluate --file`** measures suggestion quality on any file of
+  commands, and the report now separates what could not be known from how
+  well the rest was ordered.
+
+### Changed
+
+- **Online suggestions are now on by default.** Specs may search a package
+  registry for the word you are typing, which sends that word to the
+  registry. Set `autocomplete.onlineSuggestions` to `false` to keep
+  everything on your machine, as before.
+- **`git push` and `git pull` offer the current branch first.** For
+  `git checkout`, `switch`, `merge` and `rebase` it is listed after the
+  other branches.
+- **Enter now inserts the suggestion you picked.** After you move the
+  highlight with `Up` or `Down`, `Enter` inserts that suggestion instead of
+  running the command. If you have not moved the highlight, `Enter` still
+  runs the command as typed. Set `autocomplete.enterAccepts` to `false` for
+  the old behaviour.
+
 ## [0.1.0] - 2026-11-21
 
 The first release. hiruzen shows a dropdown of what the next word of your
