@@ -31,6 +31,21 @@
         { "name": "value", "isOptional": true, "suggestions": ["true", "false"] }
       ] },
     { "name": "theme", "description": "Show or change the dropdown's colours", "options": [ { "name": ["-l", "--list"], "description": "Preview every theme" } ], "args": { "name": "name", "isOptional": true, "suggestions": ["dark", "light", "dracula", "nord", "gruvbox", "solarized"] } },
+    { "name": ["run", "r"], "description": "Run a saved script", "options": [ { "name": ["-p", "--print"], "description": "Print the command instead of running it" } ], "args": { "name": "script", "isOptional": true, "generators": { "script": ["hiruzen", "scripts", "list", "--names"], "splitOn": "\n" } } },
+    { "name": "scripts", "description": "Manage saved scripts", "subcommands": [
+      { "name": "list", "description": "List saved scripts" },
+      { "name": "new", "description": "Create a script", "args": { "name": "name" } },
+      { "name": "edit", "description": "Edit a script", "args": { "name": "script", "generators": { "script": ["hiruzen", "scripts", "list", "--names"], "splitOn": "\n" } } },
+      { "name": "show", "description": "Show a script and its parameters", "args": { "name": "script", "generators": { "script": ["hiruzen", "scripts", "list", "--names"], "splitOn": "\n" } } },
+      { "name": ["remove", "rm"], "description": "Delete a script", "args": { "name": "script", "generators": { "script": ["hiruzen", "scripts", "list", "--names"], "splitOn": "\n" } } },
+      { "name": "dir", "description": "Print the directory scripts are kept in" }
+    ] },
+    { "name": "plugins", "description": "Manage shell plugins", "subcommands": [
+      { "name": "list", "description": "List installed plugins" },
+      { "name": "add", "description": "Add a plugin from a git URL or a local directory", "options": [ { "name": "--name", "description": "Name to give the plugin", "args": { "name": "name" } } ], "args": { "name": "source", "template": "folders" } },
+      { "name": ["remove", "rm"], "description": "Remove a plugin", "args": { "name": "plugin", "generators": { "script": ["hiruzen", "plugins", "list", "--names"], "splitOn": "\n" } } },
+      { "name": "update", "description": "Update plugins cloned with git", "args": { "name": "plugin", "isOptional": true, "generators": { "script": ["hiruzen", "plugins", "list", "--names"], "splitOn": "\n" } } }
+    ] },
     { "name": ["doctor", "diagnostic"], "description": "Check that hiruzen is set up correctly" },
     { "name": "issue", "description": "Open a new issue with your system details filled in", "args": { "name": "title", "isOptional": true, "isVariadic": true } },
     { "name": "complete", "description": "Print the suggestions for a partly typed command", "options": [ { "name": ["-s", "--shell"], "description": "Complete as this shell would", "args": { "name": "shell", "suggestions": ["zsh", "bash", "fish", "pwsh", "powershell", "cmd"] } } ], "args": { "name": "command" } },

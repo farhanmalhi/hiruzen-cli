@@ -173,6 +173,8 @@ pub struct Options {
     pub history: bool,
     /// Commands that get no suggestions.
     pub disabled_commands: Vec<String>,
+    /// How far a suggestion the user always picks in this context is lifted.
+    pub history_boost: f64,
 }
 
 impl Default for Options {
@@ -181,6 +183,7 @@ impl Default for Options {
             fuzzy: true,
             history: true,
             disabled_commands: Vec::new(),
+            history_boost: HISTORY_BOOST,
         }
     }
 }
@@ -201,6 +204,10 @@ impl Engine {
     /// history file is read.
     pub fn system(shell: Shell) -> Self {
         Self::new(shell, History::load(shell), Generators::system())
+    }
+
+    pub fn options(&self) -> Options {
+        self.options.read().map(|options| options.clone()).unwrap_or_default()
     }
 
     pub fn set_options(&self, options: Options) {
@@ -266,20 +273,24 @@ impl Engine {
 
         let context: Vec<&str> = done.iter().map(|t| t.text.as_str()).collect();
         if !done.is_empty() {
-            // Nothing from a spec: fall back to what the user has typed here before.
-            if items.is_empty() {
+            // What the user has typed at this point before. A spec lists what
+            // is valid; history also knows the free-form values (hosts, paths,
+            // names) no spec can. Where a spec has answers, its own entries
+            // come first and history only adds what is missing from them.
+            {
+                let (limit, priority) = if items.is_empty() { (50, 55.0) } else { (20, 45.0) };
                 items.extend(
                     history
                         .followers(&context)
                         .into_iter()
-                        .take(50)
+                        .take(limit)
                         .filter(|(token, _)| !token.starts_with('-') || active.text.starts_with('-'))
                         // Values that need quoting cannot be inserted as they are.
                         .filter(|(token, _)| !token.chars().any(|c| c.is_whitespace() || c.is_control()))
                         .map(|(token, _)| {
                             Candidate::new(token, Kind::History)
                                 .described("From your history")
-                                .with_priority(55.0)
+                                .with_priority(priority)
                         }),
                 );
             }
@@ -298,7 +309,7 @@ impl Engine {
             !matches!(c.kind, Kind::Arg | Kind::File) || !context.get(1..).unwrap_or(&[]).contains(&c.name.as_str())
         });
 
-        let items = rank(items, &active.text, &context, history, options.fuzzy);
+        let items = rank(items, &active.text, &context, history, &options);
         // The hint names the argument expected next; once the user is typing
         // it, a box that only repeats the argument's name is noise.
         let hint = hint.filter(|_| active.text.is_empty());
@@ -774,7 +785,7 @@ fn match_candidate(candidate: &Candidate, needle: &str, needle_lower: &str) -> O
 }
 
 /// Filters candidates to those matching `needle` and orders them best first.
-fn rank(items: Vec<Candidate>, needle: &str, context: &[&str], history: &History, fuzzy: bool) -> Vec<Candidate> {
+fn rank(items: Vec<Candidate>, needle: &str, context: &[&str], history: &History, options: &Options) -> Vec<Candidate> {
     let needle_lower = needle.to_lowercase();
     let mut seen: HashSet<String> = HashSet::new();
     let mut scored: Vec<(Match, f64, usize, Candidate)> = Vec::new();
@@ -786,7 +797,7 @@ fn rank(items: Vec<Candidate>, needle: &str, context: &[&str], history: &History
             Match::ExactPrefix
         } else {
             match match_candidate(&candidate, needle, &needle_lower) {
-                Some(quality) if fuzzy || quality >= Match::Prefix => quality,
+                Some(quality) if options.fuzzy || quality >= Match::Prefix => quality,
                 _ => continue,
             }
         };
@@ -797,7 +808,7 @@ fn rank(items: Vec<Candidate>, needle: &str, context: &[&str], history: &History
         for alias in &candidate.aliases {
             affinity = affinity.max(history.affinity(context, alias));
         }
-        let score = candidate.priority + HISTORY_BOOST * affinity;
+        let score = candidate.priority + options.history_boost * affinity;
         scored.push((quality, score, order, candidate));
     }
     scored.sort_by(|a, b| {
@@ -1024,15 +1035,24 @@ mod tests {
             Candidate::new("reset", Kind::Subcommand),
             Candidate::new("restore", Kind::Subcommand),
         ];
-        let got: Vec<String> = rank(items.clone(), "st", &["git"], &history, true)
+        let got: Vec<String> = rank(items.clone(), "st", &["git"], &history, &Options::default())
             .into_iter()
             .map(|c| c.name)
             .collect();
         assert_eq!(got, vec!["stash", "status", "restore", "reset"]);
-        let strict: Vec<String> = rank(items, "st", &["git"], &history, false)
-            .into_iter()
-            .map(|c| c.name)
-            .collect();
+        let strict: Vec<String> = rank(
+            items,
+            "st",
+            &["git"],
+            &history,
+            &Options {
+                fuzzy: false,
+                ..Options::default()
+            },
+        )
+        .into_iter()
+        .map(|c| c.name)
+        .collect();
         assert_eq!(strict, vec!["stash", "status"]);
     }
 }

@@ -11,8 +11,12 @@ use serde::Deserialize;
 
 static ARCHIVE: &[u8] = include_bytes!("../specs/specs.bin");
 const MAGIC: &[u8] = b"HZSP1\0";
-/// hiruzen's own spec, written by hand; the Fig library has none for it.
-const OWN_SPEC: &str = include_str!("../specs/hiruzen.json");
+/// Specs for commands the Fig library does not cover: hiruzen's own, written
+/// by hand, and ones generated from a tool's help by `tools/helpgen`.
+const EXTRA_SPECS: &[(&str, &str)] = &[
+    ("hiruzen", include_str!("../specs/hiruzen.json")),
+    ("claude", include_str!("../specs/claude.json")),
+];
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -419,8 +423,8 @@ impl SpecStore {
         if let Some(hit) = self.cache.lock().ok()?.get(key) {
             return hit.clone();
         }
-        let parsed = if key == "hiruzen" {
-            serde_json::from_str::<Subcommand>(OWN_SPEC).ok().map(Arc::new)
+        let parsed = if let Some((_, extra)) = EXTRA_SPECS.iter().find(|(name, _)| *name == key) {
+            serde_json::from_str::<Subcommand>(extra).ok().map(Arc::new)
         } else if self.contains(key) {
             self.raw(key)
                 .and_then(|raw| serde_json::from_slice::<Subcommand>(&raw).ok())
@@ -442,6 +446,13 @@ impl SpecStore {
                     .raw("__index__")
                     .and_then(|raw| serde_json::from_slice(&raw).ok())
                     .unwrap_or_default();
+                let mut map = map;
+                for (name, extra) in EXTRA_SPECS {
+                    let description = serde_json::from_str::<Subcommand>(extra)
+                        .ok()
+                        .and_then(|spec| spec.description);
+                    map.insert(name.to_string(), description.unwrap_or_default());
+                }
                 let mut list: Vec<(String, String)> = map.into_iter().collect();
                 list.sort();
                 Arc::new(list)
@@ -494,6 +505,18 @@ mod tests {
         let theme = spec.subcommands.iter().find(|s| s.name[0] == "theme").expect("theme");
         let themes: Vec<&str> = theme.args[0].suggestions.iter().map(|s| s.name[0].as_str()).collect();
         assert_eq!(themes, crate::settings::THEME_NAMES);
+    }
+
+    #[test]
+    fn extra_specs_parse_and_are_indexed() {
+        let store = SpecStore::embedded();
+        for (name, _) in EXTRA_SPECS {
+            let spec = store.load(name).unwrap_or_else(|| panic!("{name} spec"));
+            assert!(!spec.subcommands.is_empty(), "{name}");
+            assert!(store.index().iter().any(|(key, _)| key == name), "{name}");
+        }
+        let claude = store.load("claude").unwrap();
+        assert!(claude.options.iter().any(|o| o.name.iter().any(|n| n == "--model")));
     }
 
     #[test]

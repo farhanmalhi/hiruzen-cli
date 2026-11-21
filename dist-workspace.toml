@@ -1,0 +1,34 @@
+[workspace]
+members = ["cargo:."]
+
+# Config for 'dist'
+[dist]
+# The preferred dist version to use in CI (Cargo.toml SemVer syntax)
+cargo-dist-version = "0.34.0"
+# CI backends to support
+ci = "github"
+# The installers to generate for each app
+installers = ["shell", "powershell", "homebrew"]
+# Target platforms to build apps for (Rust target-triple syntax)
+targets = ["aarch64-apple-darwin", "aarch64-unknown-linux-gnu", "aarch64-unknown-linux-musl", "x86_64-apple-darwin", "x86_64-unknown-linux-gnu", "x86_64-unknown-linux-musl", "x86_64-pc-windows-msvc"]
+# Path that installers should place binaries in
+install-path = "~/.local/bin"
+# Where to host releases
+hosting = "github"
+# Whether to install an updater program
+install-updater = false
+# Homebrew tap the formula is pushed to (needs the HOMEBREW_TAP_TOKEN secret)
+tap = "farhanmalhi/homebrew-tap"
+# Name of the formula: `brew install farhanmalhi/tap/hiruzen`
+formula = "hiruzen"
+# Publish jobs to run in CI
+publish-jobs = ["homebrew"]
+# Release a prerelease tag (v0.1.0-rc.1) to GitHub only, not to the tap
+publish-prereleases = false
+# Let Dependabot bump the actions in release.yml without failing the release
+allow-dirty = ["ci"]
+
+# Build the arm64 Linux targets on arm64 runners rather than cross-compiling
+[dist.github-custom-runners]
+aarch64-unknown-linux-gnu = "ubuntu-22.04-arm"
+aarch64-unknown-linux-musl = "ubuntu-22.04-arm"

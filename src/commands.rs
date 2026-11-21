@@ -565,6 +565,134 @@ pub fn issue(args: &[String]) -> Result<i32, String> {
     Ok(0)
 }
 
+// --- evaluate ------------------------------------------------------------------
+
+/// Answers no commands, so an evaluation measures specs and history alone and
+/// runs nothing on the machine.
+struct NoCommands;
+
+impl crate::engine::generators::Runner for NoCommands {
+    fn run(&self, _argv: &[String], _cwd: &Path) -> Option<String> {
+        None
+    }
+}
+
+#[derive(Default)]
+struct Tally {
+    cases: usize,
+    top1: usize,
+    top3: usize,
+    top8: usize,
+}
+
+impl Tally {
+    fn add(&mut self, rank: Option<usize>) {
+        self.cases += 1;
+        if let Some(rank) = rank {
+            self.top1 += usize::from(rank < 1);
+            self.top3 += usize::from(rank < 3);
+            self.top8 += usize::from(rank < 8);
+        }
+    }
+
+    fn line(&self, label: &str) -> String {
+        let percent = |n: usize| 100.0 * n as f64 / self.cases.max(1) as f64;
+        format!(
+            "{label:<44} {:>6} cases   first {:>5.1}%   top 3 {:>5.1}%   top 8 {:>5.1}%",
+            self.cases,
+            percent(self.top1),
+            percent(self.top3),
+            percent(self.top8)
+        )
+    }
+}
+
+/// `hiruzen evaluate [--boost N]`: measures suggestion quality against your
+/// own shell history.
+///
+/// The older four fifths of the history are what hiruzen learns from. Each
+/// command in the newest fifth is then replayed word by word, and the word
+/// you really typed next is looked up in the suggestions. Only totals are
+/// printed, never the commands.
+pub fn evaluate(args: &[String]) -> Result<i32, String> {
+    use crate::engine::generators::Generators;
+    use crate::engine::history::History;
+    use crate::engine::{tokenizer, Engine, Options};
+
+    let mut options = Options::default();
+    if let [flag, value] = args {
+        if flag == "--boost" {
+            options.history_boost = value.parse().map_err(|_| "--boost takes a number".to_string())?;
+        }
+    }
+    let shell = Shell::detect();
+    let commands = History::commands(shell);
+    if commands.len() < 200 {
+        return Err(format!(
+            "{} history holds {} commands; at least 200 are needed for a meaningful result",
+            shell.name(),
+            commands.len()
+        ));
+    }
+    let split = commands.len() * 4 / 5;
+    let (learn, test) = commands.split_at(split);
+    let engine = Engine::new(
+        shell,
+        History::from_commands(learn, shell),
+        Generators::new(Box::new(NoCommands)),
+    );
+    engine.set_options(options);
+    let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
+
+    let rank_of = |line: &str, target: &str| -> Option<usize> {
+        let completion = engine.complete(line, &cwd)?;
+        completion
+            .items
+            .iter()
+            .position(|item| item.name == target || item.aliases.iter().any(|alias| alias == target))
+    };
+    let (mut name_typed, mut next_blank, mut next_typed) = (Tally::default(), Tally::default(), Tally::default());
+    for command in test {
+        let parsed = tokenizer::parse(command.trim(), shell);
+        let mut words: Vec<String> = parsed.done.into_iter().map(|t| t.text).collect();
+        words.extend(Some(parsed.active.text).filter(|t| !t.is_empty()));
+        // Words that needed quoting cannot be rebuilt into a line reliably.
+        if words.is_empty()
+            || words
+                .iter()
+                .any(|w| w.chars().any(|c| c.is_whitespace() || matches!(c, '\'' | '"' | '\\')))
+        {
+            continue;
+        }
+        let typed = |word: &str| word.chars().take(2).collect::<String>();
+        if words[0].chars().count() > 2 {
+            name_typed.add(rank_of(&typed(&words[0]), &words[0]));
+        }
+        for i in 1..words.len().min(5) {
+            let before = words[..i].join(" ");
+            next_blank.add(rank_of(&format!("{before} "), &words[i]));
+            if words[i].chars().count() > 2 {
+                next_typed.add(rank_of(&format!("{before} {}", typed(&words[i])), &words[i]));
+            }
+        }
+    }
+    println!(
+        "Learned from {} commands, tested on {} (history boost {}).",
+        learn.len(),
+        test.len(),
+        engine_boost(&engine)
+    );
+    println!("{}", name_typed.line("Command name, after 2 letters"));
+    println!("{}", next_blank.line("Next word, nothing typed"));
+    println!("{}", next_typed.line("Next word, after 2 letters"));
+    println!("Live values (branches, files, containers) are not run here, so real use scores higher on those.");
+    Ok(0)
+}
+
+fn engine_boost(engine: &crate::engine::Engine) -> f64 {
+    engine.options().history_boost
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

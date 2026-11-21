@@ -243,6 +243,7 @@ impl Session {
             fuzzy: self.settings.fuzzy,
             history: self.settings.history,
             disabled_commands: self.settings.disabled_commands.clone(),
+            ..Default::default()
         });
         if self.settings.disable {
             self.completion = None;

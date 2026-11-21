@@ -21,11 +21,15 @@ pub struct History {
 
 impl History {
     pub fn load(shell: Shell) -> History {
-        let mut history = History::default();
         let Some(path) = shell.history_file() else {
-            return history;
+            return History::default();
         };
-        let commands = read_history_file(&path, shell);
+        Self::from_commands(&read_history_file(&path, shell), shell)
+    }
+
+    /// Learns from commands given oldest first.
+    pub fn from_commands(commands: &[String], shell: Shell) -> History {
+        let mut history = History::default();
         let total = commands.len().max(1);
         for (i, command) in commands.iter().enumerate() {
             // Older entries count for less: weights run from 0.25 up to 1.
@@ -33,6 +37,14 @@ impl History {
             history.add(command, shell, weight);
         }
         history
+    }
+
+    /// The commands in the shell's history file, oldest first.
+    pub fn commands(shell: Shell) -> Vec<String> {
+        shell
+            .history_file()
+            .map(|path| read_history_file(&path, shell))
+            .unwrap_or_default()
     }
 
     /// Records a command run in this session. Fresh commands outweigh

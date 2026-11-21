@@ -1,0 +1,12 @@
+{
+  "name": "hiruzen-cli",
+  "owner": { "name": "The hiruzen authors" },
+  "description": "Marketplace for the hiruzen plugin",
+  "plugins": [
+    {
+      "name": "hiruzen",
+      "source": "./claude-plugin",
+      "description": "Look up the valid subcommands, options and arguments of command-line tools offline, using the hiruzen CLI"
+    }
+  ]
+}

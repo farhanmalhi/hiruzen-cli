@@ -12,19 +12,22 @@ $ git ch
       branch          List, create, or delete branches
 ```
 
-- **One binary, no runtime.** Written in Rust, with the completion specs
-  embedded. Nothing else to install.
-- **Offline.** hiruzen makes no network requests.
-- **Cross-platform.** macOS and Linux with zsh, bash, fish and PowerShell.
-  Windows (PowerShell, Git Bash, cmd) builds and passes its tests, but is
-  [not yet tried in a live terminal](#what-has-been-tested).
-- **Safe to enable.** If hiruzen cannot start, your shell opens as normal.
+It is a single Rust binary with the completion specs embedded, so there is
+nothing else to install, and it makes no network requests. It runs on macOS
+and Linux with zsh, bash, fish and PowerShell. Windows (PowerShell, Git Bash,
+cmd) builds and passes its tests, but is
+[not yet tried in a live terminal](#what-has-been-tested). If hiruzen cannot
+start, your shell opens as normal.
 
 ## Contents
 
 - [Install](#install)
 - [Usage](#usage)
 - [Settings](#settings)
+- [Scripts](#scripts)
+- [Plugins](#plugins)
+- [Measuring accuracy](#measuring-accuracy)
+- [Use with Claude Code](#use-with-claude-code)
 - [How it works](#how-it-works)
 - [Shell support](#shell-support)
 - [Privacy and security](#privacy-and-security)
@@ -38,16 +41,46 @@ $ git ch
 
 ## Install
 
-### 1. Build the binary
+### 1. Get the binary
 
-hiruzen is built from source. You need a [Rust toolchain](https://rustup.rs),
-version 1.91 or newer. From a clone of this repository:
+Each [release](https://github.com/farhanmalhi/hiruzen-cli/releases) has a
+prebuilt binary for macOS (Apple silicon and Intel), Linux (x64 and arm64)
+and Windows (x64).
+
+**macOS, with Homebrew** (this also works with Homebrew on Linux):
+
+```sh
+brew install farhanmalhi/tap/hiruzen
+```
+
+**Linux and macOS, without Homebrew:**
+
+```sh
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/farhanmalhi/hiruzen-cli/releases/latest/download/hiruzen-cli-installer.sh | sh
+```
+
+**Windows, in PowerShell:**
+
+```powershell
+powershell -ExecutionPolicy Bypass -c "irm https://github.com/farhanmalhi/hiruzen-cli/releases/latest/download/hiruzen-cli-installer.ps1 | iex"
+```
+
+The two installer scripts download the binary for your machine, check it
+against its SHA-256 checksum, put it in `~/.local/bin` (on Windows,
+`%USERPROFILE%\.local\bin`) and add that directory to your `PATH`. Open a
+new terminal afterwards. You can also download an archive from the release
+page and put `hiruzen` on your `PATH` yourself.
+
+**From source.** You need a [Rust toolchain](https://rustup.rs), version 1.91
+or newer. From a clone of this repository:
 
 ```sh
 cargo install --locked --path .
 ```
 
-This puts `hiruzen` in `~/.cargo/bin`, which must be on your `PATH`. Check it:
+This puts `hiruzen` in `~/.cargo/bin`, which must be on your `PATH`.
+
+Whichever way you chose, check it:
 
 ```sh
 hiruzen --version
@@ -117,6 +150,10 @@ hiruzen integrations status    Show which shells start hiruzen
 hiruzen init <SHELL>           Print the startup line, to add it by hand
 hiruzen settings [KEY [VALUE]] List, read or change settings
 hiruzen theme [NAME | --list]  Show or change the dropdown's colours
+hiruzen run [NAME [key=value]] Run a saved script; with no name, list them
+hiruzen scripts <ACTION>       Manage saved scripts: list, new, edit, show, remove, dir
+hiruzen plugins <ACTION>       Manage shell plugins: list, add, remove, update
+hiruzen evaluate               Measure suggestion quality against your own history
 hiruzen doctor                 Check that hiruzen is set up correctly
 hiruzen issue [TITLE]          Open a new issue with your system details filled in
 hiruzen complete <COMMAND>     Print the suggestions for a partly typed command
@@ -190,6 +227,95 @@ hiruzen settings open                         # open the file in your editor
 `hiruzen theme --list` previews every theme, and `hiruzen theme nord` selects
 one.
 
+## Scripts
+
+A script is a saved command with named blanks. Scripts are plain files in
+`~/.config/hiruzen/scripts` (print the exact place with `hiruzen scripts dir`).
+
+```sh
+hiruzen scripts new restart     # create one and open it in $EDITOR
+hiruzen run                     # list scripts
+hiruzen run restart             # run it; you are asked for each blank
+hiruzen run restart service=api env=prod
+hiruzen run restart --print service=api   # show the command, do not run it
+```
+
+Comment lines at the top describe the script and its blanks:
+
+```sh
+# description: Restart a service
+# param: service - Which service (choices: api, web)
+# param: env=staging - Environment to act on
+kubectl rollout restart deploy/{{service}} -n {{env}}
+```
+
+A blank with a default (`env=staging`) is optional. Values are inserted into
+the command as typed, with no quoting, and the result runs in your shell as a
+separate process, so a script cannot change the directory of the shell you
+started it from.
+
+## Plugins
+
+hiruzen can load shell plugins (prompts, aliases, functions) into each new
+shell. A plugin is a directory of shell code.
+
+```sh
+hiruzen plugins add https://github.com/zsh-users/zsh-autosuggestions
+hiruzen plugins add ~/code/my-aliases         # a local directory, used in place
+hiruzen plugins list
+hiruzen plugins update                        # git pull the cloned ones
+hiruzen plugins remove zsh-autosuggestions
+```
+
+Adding from a URL runs `git clone`, which is the one place a hiruzen command
+uses the network, and only because you asked it to. Plugins load through the
+`hiruzen init` line, so that line (or `hiruzen install`) must be in place. For
+each shell hiruzen loads the plugin's conventional entry file:
+`<name>.plugin.zsh` for zsh, `<name>.plugin.bash` or `<name>.sh` for bash,
+`conf.d/*.fish` for fish, `<name>.psm1` or `<name>.ps1` for PowerShell.
+Removing a plugin deletes only a directory hiruzen cloned; one added from a
+local path is left untouched.
+
+## Measuring accuracy
+
+`hiruzen evaluate` measures how good the suggestions are for you. It learns
+from the older four fifths of your shell history, replays the newest fifth
+word by word, and reports how often the word you really typed next was the
+first suggestion, in the top three, or in the top eight. It needs at least
+200 commands of history, prints totals only, and runs no commands.
+
+Suggestions cannot always be right: where several words are valid, hiruzen
+ranks them by the spec's priority and by what you have typed in the same
+position before. On the one history this has been measured against (275
+commands, a small sample), the right command name was first 69% of the time
+after two letters, and the right next word was first 52% of the time after
+two letters and in the top eight 49% of the time with nothing typed. Live
+values such as branches are not counted in that test, so real use is higher.
+
+## Use with Claude Code
+
+This repository is also a Claude Code plugin marketplace. The plugin lets
+Claude look up a tool's valid subcommands and options with `hiruzen complete`
+before it writes a command, so it does not guess at flags.
+
+Install hiruzen first (above), then in Claude Code:
+
+```
+/plugin install hiruzen --marketplace farhanmalhi/hiruzen-cli
+```
+
+On Claude Code older than 2.1.275, use two steps:
+`/plugin marketplace add farhanmalhi/hiruzen-cli`, then
+`/plugin install hiruzen@hiruzen-cli`.
+
+| Skill | What it does |
+| --- | --- |
+| `/hiruzen:cli-lookup` | Looks up what can follow a partly typed command. Claude also uses it on its own when unsure of a flag. |
+| `/hiruzen:setup` | Installs, checks or removes hiruzen and changes its settings. Runs only when you ask for it. |
+
+hiruzen also completes the `claude` command itself in your terminal: its
+options, subcommands, and values such as `--permission-mode`.
+
 ## How it works
 
 hiruzen starts your shell inside a pseudo-terminal and passes everything
@@ -245,28 +371,28 @@ used in a real Windows terminal, treat Windows support as experimental.
 
 ## Privacy and security
 
-- **No network access.** hiruzen sends nothing anywhere. The specs are inside
-  the binary.
-- **History is read, never written.** hiruzen reads the last 20,000 lines of
+- hiruzen has no network access and sends nothing anywhere. The specs are
+  inside the binary.
+- History is read, never written. hiruzen reads the last 20,000 lines of
   your shell's history file at startup. It keeps commands you run during a
   session in memory only, and stores nothing on disk.
-- **It runs local commands as you type.** Live suggestions come from running
+- It runs local commands as you type. Live suggestions come from running
   read-only commands in the current directory: `git` to list branches, tags
   and changed files, and the listing commands that a tool's spec names (for
   example a spec may run its tool to list its resources). Each command has no
   input, is stopped after 3 seconds, and has its result reused for 4
   seconds. These commands come from the embedded spec library, not from the
   directory you are in.
-- **Spec code runs in a sandbox.** Many specs compute suggestions with
+- Spec code runs in a sandbox. Many specs compute suggestions with
   JavaScript: parsing a command's output, or choosing which command to run.
   hiruzen runs that code in an embedded JavaScript engine that has no file,
   network or timer access. The only thing the code can do is ask hiruzen to
   run a command, under the limits above. A spec that would fetch from the
   network (for example searching the npm registry) gets no result.
-- **Temporary files.** The integration scripts are written to a private
+- The integration scripts are written to a private
   directory (`hiruzen-<pid>` under the system temp directory, mode `0700` on
   macOS and Linux) and removed when the session ends.
-- **PowerShell execution policy.** hiruzen starts PowerShell with
+- hiruzen starts PowerShell with
   `-ExecutionPolicy Bypass` so that its integration script can load. This
   applies to that PowerShell process only and does not change your system
   setting.
@@ -293,7 +419,7 @@ used in a real Windows terminal, treat Windows support as experimental.
 
 | Problem | What to do |
 | --- | --- |
-| `hiruzen: command not found` | Add `~/.cargo/bin` to your `PATH`, above the `hiruzen init` line in your startup file. |
+| `hiruzen: command not found` | Add the directory `hiruzen` was installed to (`~/.local/bin`, or `~/.cargo/bin` if you built from source) to your `PATH`, above the `hiruzen init` line in your startup file. |
 | New terminals open without suggestions | Check that the `init` line is at the end of the startup file and that `hiruzen --version` works in that shell. Then run `hiruzen` by hand: it prints the reason if it cannot start. |
 | `hiruzen: already running in this terminal` | You are inside a session already. Nothing more is needed. |
 | `hiruzen: needs an interactive terminal` | hiruzen was started with its input or output redirected. Run it directly in a terminal. |
@@ -306,7 +432,10 @@ used in a real Windows terminal, treat Windows support as experimental.
 
 1. Run `hiruzen uninstall`. If you added the `hiruzen init` line by hand,
    remove that line yourself.
-2. Open a new terminal, then run `cargo uninstall hiruzen-cli`.
+2. Open a new terminal, then remove the binary the way you installed it:
+   `brew uninstall hiruzen`, delete `hiruzen` from `~/.local/bin`
+   (`%USERPROFILE%\.local\bin` on Windows), or run
+   `cargo uninstall hiruzen-cli`.
 3. Delete the settings directory if you changed any settings
    (`~/.config/hiruzen`, or `%APPDATA%\hiruzen` on Windows).
 
@@ -333,6 +462,9 @@ Ubuntu, macOS and Windows, so changes must pass on all three.
 | `src/shell.rs`, `shell/` | Per-shell launch logic and integration scripts |
 | `specs/specs.bin` | The embedded spec archive (generated, committed) |
 | `tools/specgen/` | Converts the Fig spec library into `specs/specs.bin` |
+| `tools/helpgen/` | Builds a spec from a tool's `--help` output, for tools Fig does not cover (used for `specs/claude.json`) |
+| `specs/hiruzen.json`, `specs/claude.json` | Specs embedded in addition to the Fig library |
+| `claude-plugin/`, `.claude-plugin/` | The Claude Code plugin and its marketplace entry |
 
 ### Updating the specs
 
@@ -351,13 +483,34 @@ To move to a newer spec library, change the `@withfig/autocomplete` version in
 `tools/specgen/package.json` first. Run `cargo test` afterwards: it checks that
 every spec in the new archive still parses.
 
+### Releasing
+
+Releases are built by [dist](https://axodotdev.github.io/cargo-dist/); its
+settings are in `dist-workspace.toml`, and `.github/workflows/release.yml` is
+generated from them (run `dist generate` after changing the settings).
+
+1. Set the new `version` in `Cargo.toml` and run `cargo build` to update
+   `Cargo.lock`.
+2. Move the entries under `Unreleased` in `CHANGELOG.md` to a new
+   `## [x.y.z] - date` heading. That section becomes the release notes.
+3. Commit, then tag and push: `git tag v0.2.0 && git push origin main v0.2.0`.
+
+The tag starts the release workflow. It builds every target, creates the
+GitHub Release with the archives, checksums and installer scripts, and pushes
+the Homebrew formula to `farhanmalhi/homebrew-tap`. The tag must match the `version` in
+`Cargo.toml`, or the workflow stops with nothing to release. A version with a
+suffix, such as `0.2.0-rc.1` tagged `v0.2.0-rc.1`, makes a prerelease and
+leaves the tap alone, which is the way to try the workflow out; it takes its
+release notes from the `0.2.0` section of the changelog.
+
 ## Scope
 
 hiruzen does one thing: autocomplete. It reuses the spec library from Fig
 (later Amazon Q Developer CLI) but is not a replacement for the rest of that
 product. It has no dotfile sync, scripts, plugin store, AI command
-generation, accounts or team features. Settings, themes, a doctor and
-shell integration management are built in, and work locally.
+generation, accounts, cloud sync or team features, because hiruzen is fully
+offline by design. Settings, themes, saved scripts, shell plugins, a doctor
+and shell integration management are built in, and work locally.
 
 ## Licence
 

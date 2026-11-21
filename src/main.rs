@@ -2,6 +2,8 @@
 
 mod commands;
 mod engine;
+mod plugins;
+mod scripts;
 mod settings;
 mod shell;
 mod specs;
@@ -24,6 +26,9 @@ USAGE:
     hiruzen integrations status    Show which shells start hiruzen
     hiruzen settings [KEY [VALUE]] List, read or change settings (also: docs, open, --delete KEY)
     hiruzen theme [NAME | --list]  Show or change the dropdown's colours
+    hiruzen run [NAME [key=value]] Run a saved script; with no name, list them
+    hiruzen scripts <ACTION>       Manage saved scripts: list, new, edit, show, remove, dir
+    hiruzen plugins <ACTION>       Manage shell plugins: list, add, remove, update
     hiruzen doctor                 Check that hiruzen is set up correctly
     hiruzen issue [TITLE]          Open a new issue with your system details filled in
     hiruzen complete <COMMAND>     Print the suggestions for a partly typed command
@@ -75,6 +80,14 @@ fn run(args: &[String]) -> Result<i32, String> {
         }
         Some("doctor" | "diagnostic" | "diagnostics") => commands::doctor(),
         Some("issue") => commands::issue(&args[1..]),
+        Some("run" | "r") => scripts::run(&args[1..]),
+        Some("scripts" | "script") => scripts::scripts(&args[1..]),
+        Some("plugins" | "plugin") => plugins::plugins(&args[1..]),
+        Some("evaluate") => commands::evaluate(&args[1..]),
+        Some("man") => {
+            print!("{HELP}");
+            Ok(0)
+        }
         _ => start(args),
     }
 }
@@ -147,6 +160,9 @@ fn init(shell: Option<&str>) -> Result<i32, String> {
         }
     };
     print!("{snippet}");
+    // Plugins load in whichever shell carries on past the lines above: the
+    // one inside hiruzen, or this one if hiruzen did not start.
+    print!("{}", plugins::init_lines(shell));
     Ok(0)
 }
 
@@ -177,6 +193,7 @@ fn complete(args: &[String]) -> Result<i32, String> {
         fuzzy: settings.fuzzy,
         history: settings.history,
         disabled_commands: settings.disabled_commands,
+        ..Default::default()
     });
     let Some(completion) = engine.complete(&line, &cwd) else {
         return Ok(1);
