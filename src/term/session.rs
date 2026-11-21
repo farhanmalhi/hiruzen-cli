@@ -164,6 +164,11 @@ struct Session {
     /// known. The Windows pseudo-console hands on the markers ahead of the
     /// prompt's text, so the anchor is taken at the next key press instead.
     anchor_pending: bool,
+    /// The line as last read at this prompt, kept while the anchor is lost.
+    /// A shell that clears the screen draws its prompt again with this text
+    /// after it, and a pending anchor then belongs before the text, not at
+    /// the cursor.
+    last_line: Option<String>,
     cwd: PathBuf,
     /// The prompt on screen belongs to a shell on another machine.
     remote: bool,
@@ -314,6 +319,27 @@ impl Session {
         self.anchor = Some(self.screen.anchor_at(row, anchor.col));
     }
 
+    /// Where the command starts when the shell has drawn its prompt again
+    /// with the text already typed after it: just before that text, once it
+    /// is back on screen and ends at the cursor.
+    fn anchor_before_typed(&self) -> Option<Anchor> {
+        let line = self.last_line.as_deref()?;
+        let (row, col) = self.screen.cursor();
+        let width = u16::try_from(unicode_width::UnicodeWidthStr::width(line)).ok()?;
+        let start = col.checked_sub(width)?;
+        (self.screen.text_between((row, start), (row, col)) == line).then(|| self.screen.anchor_at(row, start))
+    }
+
+    /// Where the command starts, for a prompt whose end was not marked in
+    /// place: before the text typed so far, or at the cursor when there is
+    /// none.
+    fn anchor_at_prompt(&mut self) -> Anchor {
+        match self.anchor_before_typed() {
+            Some(anchor) => anchor,
+            None => self.screen.anchor(),
+        }
+    }
+
     /// Hands the command waiting for its exit status to the engine.
     fn record_pending(&mut self, status: Option<i32>) {
         if let Some((command, cwd)) = self.pending.take() {
@@ -384,6 +410,7 @@ impl Session {
     fn leave_prompt(&mut self) {
         self.anchor = None;
         self.anchor_pending = false;
+        self.last_line = None;
         self.line = None;
         self.completion = None;
         self.dismissed = None;
@@ -409,6 +436,13 @@ impl Session {
             return;
         }
         self.mid_word = mid_word;
+        match &line {
+            Some(line) if line.is_empty() => self.last_line = None,
+            // A line of nothing but blanks is what a cleared screen reads
+            // as until the shell has drawn the text again.
+            Some(line) if !line.trim().is_empty() => self.last_line = Some(line.clone()),
+            _ => {}
+        }
         self.line = line;
         self.version += 1;
 
@@ -495,6 +529,14 @@ impl Session {
                 }
             }
         }
+        if self.anchor_pending {
+            // A prompt drawn again under a line being typed needs no key
+            // press to place: the line's own text shows where it starts.
+            if let Some(anchor) = self.anchor_before_typed() {
+                self.anchor_pending = false;
+                self.anchor = Some(anchor);
+            }
+        }
         self.sync_line();
         if self.stream.is_idle() {
             out.extend_from_slice(self.draw().as_bytes());
@@ -530,7 +572,7 @@ impl Session {
             // By the first key press the prompt is on screen, and the
             // cursor is where the command will start.
             self.anchor_pending = false;
-            self.anchor = Some(self.screen.anchor());
+            self.anchor = Some(self.anchor_at_prompt());
         }
         if self.selectable() {
             let count = self.completion.as_ref().map_or(0, |c| c.items.len());
@@ -793,6 +835,7 @@ pub fn run(shell: Shell, login: bool, notice: Option<&str>) -> Result<i32, Strin
         stream: Stream::default(),
         anchor: None,
         anchor_pending: false,
+        last_line: None,
         cwd,
         remote: false,
         line: None,
