@@ -24,6 +24,7 @@ start, your shell opens as normal.
 - [Install](#install)
 - [Usage](#usage)
 - [Settings](#settings)
+- [Remote shells over SSH](#remote-shells-over-ssh)
 - [Scripts](#scripts)
 - [Plugins](#plugins)
 - [Measuring accuracy](#measuring-accuracy)
@@ -123,7 +124,8 @@ and other non-interactive shells are not affected.
 
 ### Keys
 
-While suggestions are showing:
+While suggestions are showing (these are the defaults; see
+[Changing the keys](#changing-the-keys)):
 
 | Key | Action |
 | --- | --- |
@@ -154,6 +156,7 @@ hiruzen run [NAME [key=value]] Run a saved script; with no name, list them
 hiruzen scripts <ACTION>       Manage saved scripts: list, new, edit, show, remove, dir
 hiruzen plugins <ACTION>       Manage shell plugins: list, add, remove, update
 hiruzen evaluate               Measure suggestion quality against your own history
+hiruzen ssh [SSH ARGUMENTS]    Connect with ssh and keep suggestions working remotely
 hiruzen doctor                 Check that hiruzen is set up correctly
 hiruzen issue [TITLE]          Open a new issue with your system details filled in
 hiruzen complete <COMMAND>     Print the suggestions for a partly typed command
@@ -222,10 +225,61 @@ hiruzen settings open                         # open the file in your editor
 | `autocomplete.fuzzySearch` | `true` | Match anywhere in a suggestion, not only at its start |
 | `autocomplete.history` | `true` | Rank and suggest using your shell history |
 | `autocomplete.disableForCommands` | none | Commands that get no suggestions, for example `ssh,mysql` |
+| `autocomplete.onlineSuggestions` | `false` | Let specs fetch suggestions from the network, such as package names from a registry. Off means what you type stays on your machine |
+| `keys.accept` | `tab` | Keys that insert the highlighted suggestion |
+| `keys.next` | `down` | Keys that move the highlight down |
+| `keys.previous` | `up` | Keys that move the highlight up |
+| `keys.dismiss` | `escape` | Keys that hide suggestions for the current word |
 | `autocomplete.enterAccepts` | `false` | Enter inserts the highlighted suggestion once you have moved the highlight |
 
 `hiruzen theme --list` previews every theme, and `hiruzen theme nord` selects
 one.
+
+### Changing the keys
+
+Each `keys.` setting takes one or more key names separated by commas:
+
+```sh
+hiruzen settings keys.accept "tab,ctrl+y"
+hiruzen settings keys.next ctrl+n
+hiruzen settings keys.previous ctrl+p
+```
+
+Key names are `tab`, `shift+tab`, `enter`, `escape`, `up`, `down`, `left`,
+`right`, `pageup`, `pagedown`, `ctrl+space`, `ctrl+<letter>` and
+`alt+<character>`. `ctrl+c`, `ctrl+d` and `ctrl+z` cannot be bound, because
+they interrupt, end and suspend. A bound key acts only while the dropdown is
+showing; otherwise it goes to your shell as usual. A key you unbind goes to
+your shell too: with `keys.next` set to `ctrl+n` alone, Down walks shell
+history again.
+
+## Remote shells over SSH
+
+Inside a hiruzen session, connect with `hiruzen ssh` in place of `ssh` and
+suggestions keep working at the remote prompt:
+
+```sh
+hiruzen ssh me@server
+hiruzen ssh -p 2222 -i ~/.ssh/key me@server
+```
+
+It takes the same arguments as `ssh`. To use it every time, add
+`alias ssh='hiruzen ssh'` to your shell's startup file.
+
+Nothing is installed on the other machine. hiruzen sends its small prompt
+scripts inside the ssh command; they are written to a temporary directory
+there and removed when you log out. hiruzen itself keeps running on your
+machine and reads the remote prompt through the connection.
+
+At a remote prompt, suggestions come from the specs and your history only:
+subcommands, options and fixed argument values. File names, branches and
+other live values are not offered, because hiruzen could only read them from
+your own machine, where they would be wrong.
+
+Remote bash, zsh and fish are supported; a machine with another login shell,
+or without `mktemp` and `base64`, gets an ordinary login. Anything that is
+not an interactive login (a remote command, a tunnel, `-N`, `-T`) is passed
+to `ssh` unchanged, as is every call made outside a hiruzen session.
 
 ## Scripts
 
@@ -371,8 +425,16 @@ used in a real Windows terminal, treat Windows support as experimental.
 
 ## Privacy and security
 
-- hiruzen has no network access and sends nothing anywhere. The specs are
-  inside the binary.
+- hiruzen itself makes no network requests and sends nothing anywhere. The
+  specs are inside the binary.
+- By default, spec commands that exist to fetch from the network (`curl`,
+  `wget` and similar) are refused, so nothing you type is sent to a package
+  registry or search service. Turning on `autocomplete.onlineSuggestions`
+  allows them: `npm install reac` then searches the npm registry, which
+  means the word you are typing is sent to that service.
+- A tool's own listing command is always allowed, and may contact that
+  tool's service: `gh` asks GitHub for your repositories, `kubectl` asks your
+  cluster. hiruzen cannot tell which tools do this.
 - History is read, never written. hiruzen reads the last 20,000 lines of
   your shell's history file at startup. It keeps commands you run during a
   session in memory only, and stores nothing on disk.
@@ -387,8 +449,7 @@ used in a real Windows terminal, treat Windows support as experimental.
   JavaScript: parsing a command's output, or choosing which command to run.
   hiruzen runs that code in an embedded JavaScript engine that has no file,
   network or timer access. The only thing the code can do is ask hiruzen to
-  run a command, under the limits above. A spec that would fetch from the
-  network (for example searching the npm registry) gets no result.
+  run a command, under the limits above.
 - The integration scripts are written to a private
   directory (`hiruzen-<pid>` under the system temp directory, mode `0700` on
   macOS and Linux) and removed when the session ends.
@@ -408,11 +469,10 @@ used in a real Windows terminal, treat Windows support as experimental.
 - Live suggestions depend on the tool being installed and able to answer.
   Kubernetes resource names, for example, need a reachable cluster, and a
   command that takes longer than 3 seconds gives no suggestions.
-- Suggestions that a spec fetches from the network are not offered, because
-  hiruzen stays offline. Six tools in the library (`az`, `heroku`,
+- Suggestions that a spec fetches from the network are not offered unless
+  you turn on `autocomplete.onlineSuggestions`. Six tools in the library (`az`, `heroku`,
   `shopify`, `fig`, `infracost` and `@usermn/sdc`) build their whole spec in
   code at run time; hiruzen does not do that, so they have no spec.
-- The keys are fixed; they cannot be rebound yet.
 - Nushell, Xonsh and other shells not listed above are not supported.
 
 ## Troubleshooting
@@ -509,7 +569,7 @@ hiruzen does one thing: autocomplete. It reuses the spec library from Fig
 (later Amazon Q Developer CLI) but is not a replacement for the rest of that
 product. It has no dotfile sync, scripts, plugin store, AI command
 generation, accounts, cloud sync or team features, because hiruzen is fully
-offline by design. Settings, themes, saved scripts, shell plugins, a doctor
+offline by default. Settings, themes, saved scripts, shell plugins, a doctor
 and shell integration management are built in, and work locally.
 
 ## Licence

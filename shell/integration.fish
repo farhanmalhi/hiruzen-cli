@@ -12,7 +12,8 @@ function __hiruzen_escape
 end
 
 function __hiruzen_update_cwd --on-event fish_prompt
-	printf '\e]7391;CWD;%s\a' (__hiruzen_escape "$PWD")
+	set -q HIRUZEN_REMOTE; and set -l __hiruzen_where R
+	printf '\e]7391;%sCWD;%s\a' "$__hiruzen_where" (__hiruzen_escape "$PWD")
 end
 
 function fish_prompt

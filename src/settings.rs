@@ -6,6 +6,7 @@ use std::time::SystemTime;
 
 use serde_json::{Map, Value};
 
+use crate::keys;
 use crate::shell;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -17,6 +18,8 @@ pub enum ValueKind {
     Text(&'static [&'static str]),
     /// A list of words.
     List,
+    /// A comma-separated list of key names.
+    Keys,
 }
 
 pub struct Definition {
@@ -71,6 +74,36 @@ pub const DEFINITIONS: &[Definition] = &[
         help: "Commands that get no suggestions, for example: ssh,mysql",
     },
     Definition {
+        key: "autocomplete.onlineSuggestions",
+        kind: ValueKind::Bool,
+        default: "false",
+        help: "Let specs fetch suggestions from the network, such as package names from a registry",
+    },
+    Definition {
+        key: "keys.accept",
+        kind: ValueKind::Keys,
+        default: "tab",
+        help: "Keys that insert the highlighted suggestion",
+    },
+    Definition {
+        key: "keys.next",
+        kind: ValueKind::Keys,
+        default: "down",
+        help: "Keys that move the highlight down",
+    },
+    Definition {
+        key: "keys.previous",
+        kind: ValueKind::Keys,
+        default: "up",
+        help: "Keys that move the highlight up",
+    },
+    Definition {
+        key: "keys.dismiss",
+        kind: ValueKind::Keys,
+        default: "escape",
+        help: "Keys that hide suggestions for the current word",
+    },
+    Definition {
         key: "autocomplete.enterAccepts",
         kind: ValueKind::Bool,
         default: "false",
@@ -122,6 +155,7 @@ pub fn parse_value(definition: &Definition, text: &str) -> Result<Value, String>
                 Err(format!("{} takes one of: {}", definition.key, allowed.join(", ")))
             }
         }
+        ValueKind::Keys => keys::parse_list(text).map(Value::from),
         ValueKind::List => Ok(Value::from(
             text.split([',', ' '])
                 .map(str::trim)
@@ -171,6 +205,17 @@ pub struct Settings {
     pub history: bool,
     pub disabled_commands: Vec<String>,
     pub enter_accepts: bool,
+    pub online: bool,
+    pub keys: Bindings,
+}
+
+/// The byte sequences bound to each dropdown action.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct Bindings {
+    pub accept: Vec<Vec<u8>>,
+    pub next: Vec<Vec<u8>>,
+    pub previous: Vec<Vec<u8>>,
+    pub dismiss: Vec<Vec<u8>>,
 }
 
 impl Default for Settings {
@@ -207,6 +252,22 @@ impl Settings {
                 .map(|items| items.iter().filter_map(|i| i.as_str().map(str::to_string)).collect())
                 .unwrap_or_default(),
             enter_accepts: value("autocomplete.enterAccepts").as_bool().unwrap_or(false),
+            online: value("autocomplete.onlineSuggestions").as_bool().unwrap_or(false),
+            keys: {
+                let bound = |key: &str| -> Vec<Vec<u8>> {
+                    let names: Vec<String> = value(key)
+                        .as_array()
+                        .map(|items| items.iter().filter_map(|i| i.as_str().map(str::to_string)).collect())
+                        .unwrap_or_default();
+                    keys::all_sequences(&names)
+                };
+                Bindings {
+                    accept: bound("keys.accept"),
+                    next: bound("keys.next"),
+                    previous: bound("keys.previous"),
+                    dismiss: bound("keys.dismiss"),
+                }
+            },
         }
     }
 
@@ -349,5 +410,12 @@ mod tests {
         assert!(!settings.fuzzy);
         assert_eq!(settings.disabled_commands, vec!["ssh"]);
         assert_eq!(Settings::default().theme.name, "dark");
+        assert_eq!(Settings::default().keys.accept, vec![b"\t".to_vec()]);
+        let rebound: Map<String, Value> =
+            serde_json::from_str(r#"{"keys.accept": ["ctrl+y", "tab"], "keys.next": "ctrl+n"}"#).unwrap();
+        let settings = Settings::from_map(&rebound);
+        assert_eq!(settings.keys.accept, vec![vec![25], b"\t".to_vec()]);
+        assert_eq!(settings.keys.next, vec![vec![14]]);
+        assert_eq!(settings.keys.previous.len(), 2);
     }
 }

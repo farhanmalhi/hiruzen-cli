@@ -175,6 +175,8 @@ pub struct Options {
     pub disabled_commands: Vec<String>,
     /// How far a suggestion the user always picks in this context is lifted.
     pub history_boost: f64,
+    /// Let specs fetch suggestions from the network.
+    pub online: bool,
 }
 
 impl Default for Options {
@@ -184,6 +186,7 @@ impl Default for Options {
             history: true,
             disabled_commands: Vec::new(),
             history_boost: HISTORY_BOOST,
+            online: false,
         }
     }
 }
@@ -211,6 +214,7 @@ impl Engine {
     }
 
     pub fn set_options(&self, options: Options) {
+        self.generators.set_online(options.online);
         if let Ok(mut current) = self.options.write() {
             *current = options;
         }
@@ -226,6 +230,14 @@ impl Engine {
     /// Suggestions for the word under the cursor, where `line` is the command
     /// line up to the cursor.
     pub fn complete(&self, line: &str, cwd: &Path) -> Option<Completion> {
+        self.complete_at(line, cwd, false)
+    }
+
+    /// As [`complete`](Self::complete). With `remote`, the command line
+    /// belongs to a shell on another machine: only what specs and history
+    /// know is suggested, because files and live values here would describe
+    /// the wrong machine.
+    pub fn complete_at(&self, line: &str, cwd: &Path, remote: bool) -> Option<Completion> {
         let parsed = tokenizer::parse(line, self.shell);
         let active = parsed.active;
         // `FOO=bar cmd` runs cmd; the assignments are not part of what is completed.
@@ -246,7 +258,7 @@ impl Engine {
                 if active.text.is_empty() {
                     return None;
                 }
-                (self.command_names(history), None)
+                (self.command_names(history, remote), None)
             }
             Some((root, rest)) => {
                 let root_name = command_name(&root.text);
@@ -263,6 +275,7 @@ impl Engine {
                             cwd,
                             active: &active,
                             words: &words,
+                            remote,
                         };
                         walker.walk(&spec, &root_name, &root_name, rest, Vec::new(), 0)
                     }
@@ -298,7 +311,7 @@ impl Engine {
             // gets files only when the word being typed is clearly a path.
             let has_paths = items.iter().any(|c| matches!(c.kind, Kind::File | Kind::Folder));
             let wants_path = looks_like_path(&active.text) || (!has_spec && !active.text.starts_with('-'));
-            if !has_paths && wants_path {
+            if !has_paths && wants_path && !remote {
                 items.extend(generators::files(cwd, &active.text, self.shell, false));
             }
         }
@@ -325,7 +338,7 @@ impl Engine {
 
     /// Candidates for the command name itself: what the user runs most, then
     /// everything installed.
-    fn command_names(&self, history: &History) -> Vec<Candidate> {
+    fn command_names(&self, history: &History, remote: bool) -> Vec<Candidate> {
         let index = self.specs.index();
         let describe = |name: &str| -> Option<String> {
             index
@@ -343,7 +356,13 @@ impl Engine {
                 out.push(candidate);
             }
         }
-        for name in self.path_commands.get_or_init(scan_path) {
+        // What is installed here says nothing about the other machine.
+        let installed: &[String] = if remote {
+            &[]
+        } else {
+            self.path_commands.get_or_init(scan_path)
+        };
+        for name in installed {
             if seen.insert(name.clone()) {
                 let mut candidate = Candidate::new(name.as_str(), Kind::Command).with_priority(40.0);
                 candidate.description = describe(name);
@@ -423,6 +442,8 @@ struct Walker<'a> {
     active: &'a Token,
     /// Every word of the command, ending with the one being completed.
     words: &'a [String],
+    /// The command line is being typed on another machine.
+    remote: bool,
 }
 
 /// An option's arguments that are still being consumed.
@@ -673,6 +694,9 @@ impl Walker<'_> {
             .iter()
             .filter_map(|s| suggestion_candidate(s, Kind::Arg))
             .collect();
+        if self.remote {
+            return out;
+        }
         for template in &arg.template {
             out.extend(generators.template(template, needle, self.cwd, shell));
         }
@@ -887,6 +911,30 @@ mod tests {
         let after = names(&habitual, "git ch");
         assert_eq!(after[0], "cherry-pick", "{after:?}");
         assert!(before.iter().position(|n| n == "cherry-pick") >= after.iter().position(|n| n == "cherry-pick"));
+    }
+
+    #[test]
+    fn a_remote_command_line_gets_no_local_values() {
+        let engine = engine(&["git checkout release", "deploytool run"]);
+        let cwd = std::env::temp_dir();
+        let names = |line: &str| -> Vec<String> {
+            engine
+                .complete_at(line, &cwd, true)
+                .map(|c| c.items.into_iter().map(|i| i.name).collect())
+                .unwrap_or_default()
+        };
+        // Subcommands and options still come from the spec.
+        assert!(names("git ch").contains(&"checkout".to_string()));
+        // Branches would be read from this machine, so only history remains.
+        let branches = names("git checkout ");
+        assert!(branches.contains(&"release".to_string()), "{branches:?}");
+        assert!(
+            !branches.contains(&"main".to_string()) && !branches.contains(&"develop".to_string()),
+            "{branches:?}"
+        );
+        // No local files for a command without a spec.
+        assert!(names("unknowntool ").is_empty());
+        assert_eq!(names("deployt"), vec!["deploytool".to_string()]);
     }
 
     #[test]

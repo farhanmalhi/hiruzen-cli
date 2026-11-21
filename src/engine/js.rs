@@ -163,8 +163,16 @@ fn execute(runtime: &mut Runtime, job: &Job) -> Option<Output> {
     let promise = runtime.context.eval(Source::from_bytes(call.as_bytes())).ok()?;
     let _ = runtime.context.run_jobs();
     let promise = JsPromise::from_object(promise.as_object()?).ok()?;
-    let PromiseState::Fulfilled(value) = promise.state() else {
-        return None;
+    let value = match promise.state() {
+        PromiseState::Fulfilled(value) => value,
+        PromiseState::Rejected(reason) => {
+            // Set HIRUZEN_DEBUG to see why a spec's code produced nothing.
+            if std::env::var_os("HIRUZEN_DEBUG").is_some() {
+                eprintln!("hiruzen: generator in {} failed: {}", job.key, reason.display());
+            }
+            return None;
+        }
+        PromiseState::Pending => return None,
     };
     let json = value.as_string()?.to_std_string_escaped();
     serde_json::from_str::<Option<Output>>(&json).ok()?
@@ -263,6 +271,11 @@ mod tests {
             { generators: [{ custom: async (tokens, exec) => { const r = await exec({ command: "list", args: [tokens[1]] }); return r.stdout.trim().split("\n").map((name) => ({ name, priority: 80 })); } }] },
             { generators: { script: (tokens) => ["list", "things"], splitOn: "\n", getQueryTerm: "," } },
             { generators: { custom: async () => { while (true) {} } } },
+            { generators: { custom: async () => [
+                { name: new Intl.NumberFormat(undefined, { notation: "compact", maximumSignificantDigits: 3 }).format(1234567) },
+                { name: new Date("2024-03-05T10:00:00Z").toLocaleDateString() },
+                { name: typeof process.env },
+            ] } },
         ] };
     })()"#;
 
@@ -318,6 +331,46 @@ mod tests {
         assert!(run_path("tool", serde_json::json!(["args", 9, "generators"]), &["tool"]).is_none());
         // The engine still works afterwards.
         assert!(run_path("tool", serde_json::json!(["args", 0, "generators"]), &["tool", ""]).is_some());
+    }
+
+    #[test]
+    fn provides_the_globals_specs_rely_on() {
+        let out = run_path("tool", serde_json::json!(["args", 4, "generators"]), &["tool"]).unwrap();
+        assert_eq!(out.items[0].name, "1.23M");
+        assert!(
+            out.items[1]
+                .name
+                .as_str()
+                .is_some_and(|date| date.contains("2024") || date.contains("24")),
+            "{:?}",
+            out.items[1].name
+        );
+        assert_eq!(out.items[2].name, "object");
+    }
+
+    #[test]
+    fn every_embedded_spec_module_loads() {
+        let store = crate::specs::SpecStore::embedded();
+        let keys = store.module_keys();
+        assert!(keys.len() > 200, "expected the spec modules, found {}", keys.len());
+        // An empty path names the spec itself, which has nothing to run, so
+        // a result means the module was evaluated without throwing.
+        let failed: Vec<&str> = keys
+            .into_iter()
+            .filter(|key| {
+                run(
+                    key,
+                    &|| store.module(key),
+                    &serde_json::json!([]),
+                    &[],
+                    "/tmp",
+                    &HashMap::new(),
+                    &exec_table,
+                )
+                .is_none()
+            })
+            .collect();
+        assert!(failed.is_empty(), "spec modules failed to load: {failed:?}");
     }
 
     #[test]

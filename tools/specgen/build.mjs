@@ -78,7 +78,9 @@ const convertGenerator = (gen, named, path) => {
   if (typeof gen.getQueryTerm === "string") out.getQueryTerm = gen.getQueryTerm;
   if (needsFunction) {
     out.dynamic = true;
-    if (!nativeName) out.js = path;
+    // Kept even when a native name exists: hiruzen runs the function for
+    // the named generators it has no native implementation of.
+    out.js = path;
   } else if (typeof gen.getQueryTerm === "function" && !nativeName) {
     // The command is plain, but which part of the word it completes is computed.
     out.js = path;

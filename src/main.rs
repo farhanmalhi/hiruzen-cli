@@ -2,11 +2,13 @@
 
 mod commands;
 mod engine;
+mod keys;
 mod plugins;
 mod scripts;
 mod settings;
 mod shell;
 mod specs;
+mod ssh;
 mod term;
 
 use std::io::IsTerminal;
@@ -29,6 +31,7 @@ USAGE:
     hiruzen run [NAME [key=value]] Run a saved script; with no name, list them
     hiruzen scripts <ACTION>       Manage saved scripts: list, new, edit, show, remove, dir
     hiruzen plugins <ACTION>       Manage shell plugins: list, add, remove, update
+    hiruzen ssh [SSH ARGUMENTS]    Connect with ssh and keep suggestions working remotely
     hiruzen doctor                 Check that hiruzen is set up correctly
     hiruzen issue [TITLE]          Open a new issue with your system details filled in
     hiruzen complete <COMMAND>     Print the suggestions for a partly typed command
@@ -84,6 +87,7 @@ fn run(args: &[String]) -> Result<i32, String> {
         Some("scripts" | "script") => scripts::scripts(&args[1..]),
         Some("plugins" | "plugin") => plugins::plugins(&args[1..]),
         Some("evaluate") => commands::evaluate(&args[1..]),
+        Some("ssh") => ssh::run(&args[1..]),
         Some("man") => {
             print!("{HELP}");
             Ok(0)
@@ -145,8 +149,10 @@ fn init(shell: Option<&str>) -> Result<i32, String> {
         Shell::Bash => {
             "if [[ -z \"$HIRUZEN\" && $- == *i* ]] && command -v hiruzen >/dev/null 2>&1; then\n  if shopt -q login_shell; then hiruzen --auto --shell bash --login && exit; else hiruzen --auto --shell bash && exit; fi\nfi\n"
         }
+        // fish receives these lines through a pipe (`hiruzen init fish | source`),
+        // which would otherwise become hiruzen's input; it is given the terminal.
         Shell::Fish => {
-            "if test -z \"$HIRUZEN\"; and status is-interactive; and type -q hiruzen\n  if status is-login\n    hiruzen --auto --shell fish --login; and exit\n  else\n    hiruzen --auto --shell fish; and exit\n  end\nend\n"
+            "if test -z \"$HIRUZEN\"; and status is-interactive; and type -q hiruzen\n  if status is-login\n    hiruzen --auto --shell fish --login </dev/tty; and exit\n  else\n    hiruzen --auto --shell fish </dev/tty; and exit\n  end\nend\n"
         }
         Shell::Pwsh | Shell::Powershell => {
             if shell == Shell::Pwsh {
@@ -193,6 +199,7 @@ fn complete(args: &[String]) -> Result<i32, String> {
         fuzzy: settings.fuzzy,
         history: settings.history,
         disabled_commands: settings.disabled_commands,
+        online: settings.online,
         ..Default::default()
     });
     let Some(completion) = engine.complete(&line, &cwd) else {

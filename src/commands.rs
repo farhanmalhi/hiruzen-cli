@@ -55,6 +55,7 @@ pub fn settings(args: &[String]) -> Result<i32, String> {
                     ValueKind::Text([]) => "any text".to_string(),
                     ValueKind::Text(allowed) => allowed.join(", "),
                     ValueKind::List => "a comma-separated list".to_string(),
+                    ValueKind::Keys => "key names separated by commas, such as tab,ctrl+y".to_string(),
                 };
                 let default = if definition.default.is_empty() {
                     "none"

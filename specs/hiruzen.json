@@ -16,7 +16,7 @@
         { "name": "docs", "description": "Describe every setting" },
         { "name": "open", "description": "Open the settings file" }
       ],
-      "options": [ { "name": ["-d", "--delete"], "description": "Return a setting to its default", "args": { "name": "key", "suggestions": ["autocomplete.disable", "autocomplete.theme", "autocomplete.height", "autocomplete.descriptions", "autocomplete.fuzzySearch", "autocomplete.history", "autocomplete.disableForCommands", "autocomplete.enterAccepts"] } } ],
+      "options": [ { "name": ["-d", "--delete"], "description": "Return a setting to its default", "args": { "name": "key", "suggestions": ["autocomplete.disable", "autocomplete.theme", "autocomplete.height", "autocomplete.descriptions", "autocomplete.fuzzySearch", "autocomplete.history", "autocomplete.disableForCommands", "autocomplete.onlineSuggestions", "keys.accept", "keys.next", "keys.previous", "keys.dismiss", "autocomplete.enterAccepts"] } } ],
       "args": [
         { "name": "key", "isOptional": true, "suggestions": [
           { "name": "autocomplete.disable", "description": "Turn suggestions off" },
@@ -26,11 +26,17 @@
           { "name": "autocomplete.fuzzySearch", "description": "Match anywhere in a suggestion" },
           { "name": "autocomplete.history", "description": "Rank and suggest using shell history" },
           { "name": "autocomplete.disableForCommands", "description": "Commands that get no suggestions" },
+          { "name": "autocomplete.onlineSuggestions", "description": "Let specs fetch suggestions from the network" },
+          { "name": "keys.accept", "description": "Keys that insert the highlighted suggestion" },
+          { "name": "keys.next", "description": "Keys that move the highlight down" },
+          { "name": "keys.previous", "description": "Keys that move the highlight up" },
+          { "name": "keys.dismiss", "description": "Keys that hide suggestions" },
           { "name": "autocomplete.enterAccepts", "description": "Enter inserts the highlighted suggestion" }
         ] },
         { "name": "value", "isOptional": true, "suggestions": ["true", "false"] }
       ] },
     { "name": "theme", "description": "Show or change the dropdown's colours", "options": [ { "name": ["-l", "--list"], "description": "Preview every theme" } ], "args": { "name": "name", "isOptional": true, "suggestions": ["dark", "light", "dracula", "nord", "gruvbox", "solarized"] } },
+    { "name": "ssh", "description": "Connect with ssh and keep suggestions working in the remote shell", "loadSpec": "ssh" },
     { "name": ["run", "r"], "description": "Run a saved script", "options": [ { "name": ["-p", "--print"], "description": "Print the command instead of running it" } ], "args": { "name": "script", "isOptional": true, "generators": { "script": ["hiruzen", "scripts", "list", "--names"], "splitOn": "\n" } } },
     { "name": "scripts", "description": "Manage saved scripts", "subcommands": [
       { "name": "list", "description": "List saved scripts" },

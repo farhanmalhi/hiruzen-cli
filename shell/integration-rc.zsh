@@ -48,7 +48,7 @@ __hiruzen_escape() {
 }
 
 __hiruzen_precmd() {
-	builtin printf '\e]7391;CWD;%s\a' "$(__hiruzen_escape "${PWD}")" > /dev/tty
+	builtin printf '\e]7391;%sCWD;%s\a' "${HIRUZEN_REMOTE:+R}" "$(__hiruzen_escape "${PWD}")" > /dev/tty
 }
 
 # The markers are sent when the line editor starts, after the prompt has

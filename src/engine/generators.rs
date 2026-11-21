@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -19,6 +20,77 @@ const COMMAND_TIMEOUT: Duration = Duration::from_secs(3);
 const CACHE_TTL: Duration = Duration::from_secs(4);
 const MAX_OUTPUT: usize = 1 << 20;
 const MAX_ITEMS: usize = 2000;
+
+/// The named generators hiruzen implements itself, without running spec code.
+const NATIVE: &[&str] = &[
+    "git:localBranches",
+    "git:remoteLocalBranches",
+    "git:localOrRemoteBranches",
+    "git:remotes",
+    "git:tags",
+    "git:stashes",
+    "git:commits",
+    "git:revs",
+    "git:treeish",
+    "git:files_for_staging",
+    "git:getChangedTrackedFiles",
+    "git:aliases",
+    "npm:npmScriptsGenerator",
+    "npm:dependenciesGenerator",
+    "yarn:dependenciesGenerator",
+    "ssh:configHosts",
+    "ssh:knownHosts",
+];
+
+/// Programs whose only purpose is to fetch from the network.
+const NETWORK_PROGRAMS: &[&str] = &["curl", "wget", "http", "https", "xh", "httpie"];
+
+/// True for a generator command that exists to fetch from the network: one
+/// of the programs above, or a shell command line that calls one. A tool's
+/// own listing command (`gh repo list`) is not covered; what it contacts is
+/// that tool's business.
+fn fetches_from_network(argv: &[String]) -> bool {
+    let Some(program) = argv.first() else { return false };
+    let name = program
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(program)
+        .trim_end_matches(".exe");
+    if NETWORK_PROGRAMS.contains(&name) {
+        return true;
+    }
+    let is_shell = matches!(name, "sh" | "bash" | "zsh" | "fish" | "cmd" | "pwsh" | "powershell");
+    is_shell
+        && argv[1..].iter().any(|arg| {
+            arg.split(|c: char| !c.is_ascii_alphanumeric())
+                .any(|word| NETWORK_PROGRAMS[..2].contains(&word))
+        })
+}
+
+/// Gives a spec's `curl` call a User-Agent naming hiruzen, unless the spec set
+/// one. Some services, crates.io among them, refuse requests that do not say
+/// who is asking.
+fn identify_curl(argv: &mut Vec<String>) {
+    let is_curl = argv.first().is_some_and(|program| {
+        program
+            .rsplit(['/', '\\'])
+            .next()
+            .unwrap_or(program)
+            .trim_end_matches(".exe")
+            == "curl"
+    });
+    let has_agent = argv
+        .iter()
+        .any(|arg| arg == "-A" || arg == "--user-agent" || arg.to_ascii_lowercase().starts_with("user-agent:"));
+    if is_curl && !has_agent {
+        let agent = format!(
+            "hiruzen/{} ({})",
+            env!("CARGO_PKG_VERSION"),
+            env!("CARGO_PKG_REPOSITORY")
+        );
+        argv.splice(1..1, ["-A".to_string(), agent]);
+    }
+}
 
 /// What a command printed and how it ended.
 #[derive(Debug, Clone, Default)]
@@ -140,6 +212,8 @@ pub struct Request<'a> {
 
 /// Produces the dynamic suggestions for a spec argument.
 pub struct Generators {
+    /// Whether generator commands that fetch from the network may run.
+    online: AtomicBool,
     runner: Box<dyn Runner>,
     cache: Mutex<HashMap<CacheKey, CacheEntry>>,
 }
@@ -147,6 +221,7 @@ pub struct Generators {
 impl Generators {
     pub fn new(runner: Box<dyn Runner>) -> Self {
         Generators {
+            online: AtomicBool::new(false),
             runner,
             cache: Mutex::new(HashMap::new()),
         }
@@ -156,7 +231,18 @@ impl Generators {
         Self::new(Box::new(SystemRunner))
     }
 
-    fn exec(&self, argv: Vec<String>, cwd: &Path, env: &EnvChanges) -> Arc<Output> {
+    pub fn set_online(&self, online: bool) {
+        self.online.store(online, Ordering::Relaxed);
+    }
+
+    fn exec(&self, mut argv: Vec<String>, cwd: &Path, env: &EnvChanges) -> Arc<Output> {
+        if !self.online.load(Ordering::Relaxed) && fetches_from_network(&argv) {
+            return Arc::new(Output {
+                status: 1,
+                ..Output::default()
+            });
+        }
+        identify_curl(&mut argv);
         if !env.is_empty() {
             // The result depends on more than the command line; do not share it.
             return Arc::new(self.runner.exec(&argv, cwd, env));
@@ -208,7 +294,7 @@ impl Generators {
         for template in &generator.template {
             out.extend(self.template(template, token, cwd, shell));
         }
-        if let Some(native) = generator.native.as_deref() {
+        if let Some(native) = generator.native.as_deref().filter(|name| NATIVE.contains(name)) {
             out.extend(self.native(native, cwd));
         } else if generator.js.is_some() && matches!(root, "make" | "gmake") {
             // The spec asks make to dump its rule database, which lists make's
@@ -268,6 +354,7 @@ impl Generators {
                 None => request.cwd.to_path_buf(),
             };
             let env: Vec<(String, Option<String>)> = input.env.unwrap_or_default().into_iter().collect();
+            let shown = argv.join(" ");
             let output = if argv.is_empty() {
                 Arc::new(Output {
                     status: 1,
@@ -276,6 +363,14 @@ impl Generators {
             } else {
                 self.exec(argv, &cwd, &env)
             };
+            if std::env::var_os("HIRUZEN_DEBUG").is_some() {
+                eprintln!(
+                    "hiruzen: ran `{}`: status {}, {} bytes of output",
+                    shown,
+                    output.status,
+                    output.stdout.len()
+                );
+            }
             serde_json::json!({ "stdout": output.stdout, "stderr": output.stderr, "status": output.status }).to_string()
         };
         // Generators read a few well-known variables; the rest of the
@@ -857,6 +952,50 @@ fn ssh_known_hosts() -> Vec<Candidate> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recognises_commands_that_fetch_from_the_network() {
+        let argv = |words: &[&str]| words.iter().map(|w| w.to_string()).collect::<Vec<_>>();
+        assert!(fetches_from_network(&argv(&["curl", "-s", "https://example.com"])));
+        assert!(fetches_from_network(&argv(&["/usr/bin/wget", "x"])));
+        assert!(fetches_from_network(&argv(&["bash", "-c", "curl -s https://x | jq ."])));
+        assert!(!fetches_from_network(&argv(&["git", "branch"])));
+        assert!(!fetches_from_network(&argv(&["bash", "-c", "ls | grep curly"])));
+        assert!(!fetches_from_network(&argv(&["gh", "repo", "list"])));
+    }
+
+    #[test]
+    fn curl_calls_say_who_is_asking() {
+        let mut plain = vec!["curl".to_string(), "-s".to_string(), "https://example.com".to_string()];
+        identify_curl(&mut plain);
+        assert_eq!(plain[1], "-A");
+        assert!(plain[2].starts_with("hiruzen/"));
+        assert_eq!(plain[3..], ["-s".to_string(), "https://example.com".to_string()]);
+        let mut own = vec!["curl".to_string(), "-H".to_string(), "User-Agent: x".to_string()];
+        identify_curl(&mut own);
+        assert_eq!(own.len(), 3);
+        let mut other = vec!["git".to_string(), "status".to_string()];
+        identify_curl(&mut other);
+        assert_eq!(other.len(), 2);
+    }
+
+    #[test]
+    fn network_commands_run_only_when_online_is_on() {
+        struct Echo;
+        impl Runner for Echo {
+            fn run(&self, argv: &[String], _cwd: &Path) -> Option<String> {
+                Some(argv.join(" "))
+            }
+        }
+        let generators = Generators::new(Box::new(Echo));
+        let cwd = std::env::temp_dir();
+        assert_eq!(generators.run(&["curl", "x"], &cwd), None);
+        assert_eq!(generators.run(&["git", "x"], &cwd).as_deref(), Some("git x"));
+        generators.set_online(true);
+        assert!(generators
+            .run(&["curl", "x"], &cwd)
+            .is_some_and(|ran| ran.starts_with("curl -A hiruzen/") && ran.ends_with(" x")));
+    }
 
     #[test]
     fn parses_git_status_lines() {

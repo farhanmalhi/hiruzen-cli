@@ -460,6 +460,12 @@ impl SpecStore {
             .clone()
     }
 
+    /// The keys of every spec that has a JavaScript module.
+    #[cfg(test)]
+    pub fn module_keys(&self) -> Vec<&'static str> {
+        self.entries.keys().filter_map(|key| key.strip_prefix("js/")).collect()
+    }
+
     #[cfg(test)]
     pub fn keys(&self) -> Vec<&'static str> {
         self.entries.keys().copied().filter(|k| self.contains(k)).collect()

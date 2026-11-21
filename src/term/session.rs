@@ -16,7 +16,7 @@ use std::time::{Duration, SystemTime};
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 
 use crate::engine::{self, Completion, Engine, Options};
-use crate::settings::{self, Settings};
+use crate::settings::{self, Bindings, Settings};
 use crate::shell::Shell;
 use crate::term::marks::{Chunk, Mark, Scanner};
 use crate::term::popup::{self, Request, Style};
@@ -38,25 +38,38 @@ struct CompletionRequest {
     version: u64,
     line: String,
     cwd: PathBuf,
+    remote: bool,
 }
 
-#[derive(Debug, PartialEq)]
-enum Key {
-    Tab,
-    Up,
-    Down,
-    Escape,
-    Other,
+/// What a key press means while the dropdown is showing.
+#[derive(Debug, PartialEq, Clone, Copy)]
+enum Action {
+    Accept,
+    Next,
+    Previous,
+    Dismiss,
 }
 
-fn classify(input: &[u8]) -> Key {
-    match input {
-        b"\t" => Key::Tab,
-        b"\x1b[A" | b"\x1bOA" => Key::Up,
-        b"\x1b[B" | b"\x1bOB" => Key::Down,
-        b"\x1b" => Key::Escape,
-        _ => Key::Other,
+/// The dropdown action bound to exactly this input, if any. Input holding
+/// more than one key, such as pasted text, is never an action.
+fn action(bindings: &Bindings, input: &[u8]) -> Option<Action> {
+    let bound = |keys: &[Vec<u8>]| keys.iter().any(|key| key == input);
+    if bound(&bindings.accept) {
+        Some(Action::Accept)
+    } else if bound(&bindings.next) {
+        Some(Action::Next)
+    } else if bound(&bindings.previous) {
+        Some(Action::Previous)
+    } else if bound(&bindings.dismiss) {
+        Some(Action::Dismiss)
+    } else {
+        None
     }
+}
+
+/// The arrow keys shells use to walk their history.
+fn is_history_key(input: &[u8]) -> bool {
+    matches!(input, b"\x1b[A" | b"\x1bOA" | b"\x1b[B" | b"\x1bOB")
 }
 
 /// Puts the terminal in raw mode and restores it when dropped.
@@ -117,6 +130,8 @@ struct Session {
     /// Where the command being typed starts, once the shell has drawn a prompt.
     anchor: Option<Anchor>,
     cwd: PathBuf,
+    /// The prompt on screen belongs to a shell on another machine.
+    remote: bool,
     /// The command line up to the cursor, while the user is at a prompt.
     line: Option<String>,
     /// Bumped whenever `line` changes; stale completions are discarded by it.
@@ -243,6 +258,7 @@ impl Session {
             fuzzy: self.settings.fuzzy,
             history: self.settings.history,
             disabled_commands: self.settings.disabled_commands.clone(),
+            online: self.settings.online,
             ..Default::default()
         });
         if self.settings.disable {
@@ -318,6 +334,7 @@ impl Session {
                     version: self.version,
                     line: line.clone(),
                     cwd: self.cwd.clone(),
+                    remote: self.remote,
                 });
             }
             _ => self.completion = None,
@@ -347,7 +364,12 @@ impl Session {
                         self.apply_settings();
                     }
                 }
+                Chunk::Mark(Mark::RemoteCwd(path)) => {
+                    self.cwd = PathBuf::from(path);
+                    self.remote = true;
+                }
                 Chunk::Mark(Mark::Cwd(path)) => {
+                    self.remote = false;
                     self.cwd = normalize_cwd(&path, self.shell);
                 }
             }
@@ -375,49 +397,49 @@ impl Session {
     }
 
     fn on_input(&mut self, bytes: &[u8]) {
-        let key = classify(bytes);
         if self.selectable() {
             let count = self.completion.as_ref().map_or(0, |c| c.items.len());
-            match key {
-                Key::Tab => {
+            match action(&self.settings.keys, bytes) {
+                Some(Action::Accept) => {
                     self.accept();
                     return;
                 }
-                Key::Other if self.settings.enter_accepts && self.moved && matches!(bytes, b"\r" | b"\n") => {
-                    self.accept();
-                    return;
-                }
-                Key::Down => {
+                Some(Action::Next) => {
                     self.selected = (self.selected + 1) % count;
                     self.moved = true;
                     self.refresh();
                     return;
                 }
-                Key::Up if self.selected > 0 => {
+                // At the top of the list the key goes to the shell, so Up
+                // still reaches shell history.
+                Some(Action::Previous) if self.selected > 0 => {
                     self.selected -= 1;
                     self.moved = true;
                     self.refresh();
                     return;
                 }
-                Key::Escape => {
+                Some(Action::Dismiss) => {
                     self.dismissed = self.line.clone();
                     self.completion = None;
                     self.refresh();
+                    return;
+                }
+                _ if self.settings.enter_accepts && self.moved && matches!(bytes, b"\r" | b"\n") => {
+                    self.accept();
                     return;
                 }
                 _ => {}
             }
         }
 
-        match key {
-            Key::Up | Key::Down => {
-                // The shell's own history navigation; suggestions for recalled
-                // commands would capture the next arrow key.
-                self.browsing_history = true;
-                self.completion = None;
-                self.refresh();
-            }
-            _ => self.browsing_history = false,
+        if is_history_key(bytes) {
+            // The shell's own history navigation; suggestions for recalled
+            // commands would capture the next arrow key.
+            self.browsing_history = true;
+            self.completion = None;
+            self.refresh();
+        } else {
+            self.browsing_history = false;
         }
 
         if bytes.iter().any(|b| matches!(b, b'\r' | b'\n')) {
@@ -582,7 +604,7 @@ pub fn run(shell: Shell, login: bool) -> Result<i32, String> {
             while let Ok(newer) = pending.try_recv() {
                 request = newer;
             }
-            let result = engine.complete(&request.line, &request.cwd);
+            let result = engine.complete_at(&request.line, &request.cwd, request.remote);
             if tx
                 .send(Event::Completed {
                     version: request.version,
@@ -606,6 +628,7 @@ pub fn run(shell: Shell, login: bool) -> Result<i32, String> {
         stream: Stream::default(),
         anchor: None,
         cwd,
+        remote: false,
         line: None,
         version: 0,
         completion: None,
@@ -660,13 +683,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn classifies_single_keys_only() {
-        assert_eq!(classify(b"\t"), Key::Tab);
-        assert_eq!(classify(b"\x1b[A"), Key::Up);
-        assert_eq!(classify(b"\x1bOB"), Key::Down);
-        assert_eq!(classify(b"\x1b"), Key::Escape);
-        assert_eq!(classify(b"a"), Key::Other);
+    fn maps_single_keys_to_actions() {
+        let keys = Settings::default().keys;
+        assert_eq!(action(&keys, b"\t"), Some(Action::Accept));
+        assert_eq!(action(&keys, b"\x1b[A"), Some(Action::Previous));
+        assert_eq!(action(&keys, b"\x1bOB"), Some(Action::Next));
+        assert_eq!(action(&keys, b"\x1b"), Some(Action::Dismiss));
+        assert_eq!(action(&keys, b"a"), None);
         // Pasted text containing a tab is not a Tab key press.
-        assert_eq!(classify(b"a\tb"), Key::Other);
+        assert_eq!(action(&keys, b"a\tb"), None);
+        assert!(is_history_key(b"\x1b[B") && !is_history_key(b"\t"));
     }
 }

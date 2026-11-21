@@ -16,6 +16,9 @@ pub enum Mark {
     PromptEnd,
     /// The shell's working directory.
     Cwd(String),
+    /// The working directory of a shell on another machine, reached with
+    /// `hiruzen ssh`. Paths and live values there are out of reach.
+    RemoteCwd(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -113,6 +116,7 @@ impl Scanner {
             None if text == "PS" => Some(Mark::PromptStart),
             None if text == "PE" => Some(Mark::PromptEnd),
             Some(("CWD", path)) => Some(Mark::Cwd(unescape(path))),
+            Some(("RCWD", path)) => Some(Mark::RemoteCwd(unescape(path))),
             _ => None,
         };
         if let Some(mark) = mark {

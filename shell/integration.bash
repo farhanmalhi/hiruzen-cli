@@ -35,7 +35,7 @@ __hiruzen_escape() {
 }
 
 __hiruzen_precmd() {
-	builtin printf '\e]7391;CWD;%s\a' "$(__hiruzen_escape "$PWD")"
+	builtin printf '\e]7391;%sCWD;%s\a' "${HIRUZEN_REMOTE:+R}" "$(__hiruzen_escape "$PWD")"
 	# Re-wrap whenever something (a theme, the user) has replaced PS1.
 	if [[ "$__hiruzen_wrapped_ps1" == "" || "$__hiruzen_wrapped_ps1" != "$PS1" ]]; then
 		__hiruzen_wrapped_ps1='\[\e]7391;PS\a\]'"$PS1"'\[\e]7391;PE\a\]'
