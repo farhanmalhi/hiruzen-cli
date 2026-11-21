@@ -15,7 +15,7 @@ release only.
 Please do not open a public issue for a security problem.
 
 Report it privately through GitHub: open the
-[Security tab](https://github.com/yieldwerx-sc/hiruzen-cli/security) of this
+[Security tab](https://github.com/farhanmalhi/hiruzen-cli/security) of this
 repository and choose **Report a vulnerability**. Include:
 
 - the hiruzen version (`hiruzen --version`), your operating system and shell
