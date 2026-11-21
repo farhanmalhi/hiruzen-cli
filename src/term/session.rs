@@ -132,6 +132,10 @@ struct Session {
     stream: Stream,
     /// Where the command being typed starts, once the shell has drawn a prompt.
     anchor: Option<Anchor>,
+    /// The shell has said its prompt is drawn, but where it ends is not yet
+    /// known. The Windows pseudo-console hands on the markers ahead of the
+    /// prompt's text, so the anchor is taken at the next key press instead.
+    anchor_pending: bool,
     cwd: PathBuf,
     /// The prompt on screen belongs to a shell on another machine.
     remote: bool,
@@ -309,6 +313,7 @@ impl Session {
     /// Forgets the prompt: a command is running, or the line was abandoned.
     fn leave_prompt(&mut self) {
         self.anchor = None;
+        self.anchor_pending = false;
         self.line = None;
         self.completion = None;
         self.dismissed = None;
@@ -368,13 +373,17 @@ impl Session {
         let mut out = self.erase().into_bytes();
         for chunk in self.scanner.feed(bytes) {
             match chunk {
-                Chunk::Data(data) => {
+                Chunk::Data(mut data) => {
+                    if cfg!(windows) {
+                        remove_win32_input_request(&mut data);
+                    }
                     self.screen.feed(&data);
                     self.stream.feed(&data);
                     out.extend_from_slice(&data);
                 }
                 Chunk::Mark(Mark::PromptStart) => {
                     self.anchor = None;
+                    self.anchor_pending = false;
                 }
                 Chunk::Mark(Mark::Alias(name, value)) => self.engine.add_alias(name, value),
                 Chunk::Mark(Mark::Names(names)) => self.engine.add_functions(names),
@@ -384,7 +393,11 @@ impl Session {
                 Chunk::Mark(Mark::PromptEnd) => {
                     // A shell that does not report exit statuses.
                     self.record_pending(None);
-                    self.anchor = Some(self.screen.anchor());
+                    if cfg!(windows) {
+                        self.anchor_pending = true;
+                    } else {
+                        self.anchor = Some(self.screen.anchor());
+                    }
                     self.dismissed = None;
                     self.browsing_history = false;
                     // A new prompt is a cheap, natural moment to notice edits
@@ -429,6 +442,12 @@ impl Session {
     }
 
     fn on_input(&mut self, bytes: &[u8]) {
+        if self.anchor_pending {
+            // By the first key press the prompt is on screen, and the
+            // cursor is where the command will start.
+            self.anchor_pending = false;
+            self.anchor = Some(self.screen.anchor());
+        }
         if self.selectable() {
             let count = self.completion.as_ref().map_or(0, |c| c.items.len());
             match action(&self.settings.keys, bytes) {
@@ -508,6 +527,19 @@ impl Session {
             out.extend_from_slice(self.draw().as_bytes());
             self.write_terminal(&out);
         }
+    }
+}
+
+/// Removes the Windows pseudo-console's request for win32 input mode.
+///
+/// Passed on, it makes the terminal send every key as `ESC [ ... _` with its
+/// key codes, which the key bindings would not recognise: Tab, the arrows,
+/// Escape and Enter would all go by unseen. Without it keys arrive as the
+/// ordinary sequences, which the pseudo-console accepts just as well.
+fn remove_win32_input_request(data: &mut Vec<u8>) {
+    const REQUEST: &[u8] = b"\x1b[?9001h";
+    while let Some(at) = data.windows(REQUEST.len()).position(|window| window == REQUEST) {
+        data.drain(at..at + REQUEST.len());
     }
 }
 
@@ -676,6 +708,7 @@ pub fn run(shell: Shell, login: bool) -> Result<i32, String> {
         scanner: Scanner::default(),
         stream: Stream::default(),
         anchor: None,
+        anchor_pending: false,
         cwd,
         remote: false,
         line: None,
@@ -744,5 +777,12 @@ mod tests {
         // Pasted text containing a tab is not a Tab key press.
         assert_eq!(action(&keys, b"a\tb"), None);
         assert!(is_history_key(b"\x1b[B") && !is_history_key(b"\t"));
+    }
+
+    #[test]
+    fn drops_the_request_for_win32_input_mode() {
+        let mut data = b"\x1b[6n\x1b[?9001h\x1b[?1004hPS C:\\> ".to_vec();
+        remove_win32_input_request(&mut data);
+        assert_eq!(data, b"\x1b[6n\x1b[?1004hPS C:\\> ");
     }
 }

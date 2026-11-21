@@ -427,6 +427,9 @@ impl Generators {
             // The spec asks make to dump its rule database, which lists make's
             // built-in file names as targets. Reading the Makefile is exact.
             out.extend(make_targets(cwd));
+        } else if generator.js.is_some() && cfg!(windows) && root == "cd" {
+            // The spec lists folders by running `ls`, which Windows lacks.
+            out.extend(self.fallback(root, token, cwd, shell));
         } else if let Some(path) = &generator.js {
             match self.run_js(path, request, specs) {
                 Some(output) => out.extend(js_candidates(output, token)),
