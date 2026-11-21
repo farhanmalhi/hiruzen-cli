@@ -1,0 +1,46 @@
+{
+  "name": "hiruzen",
+  "description": "Dropdown autocomplete for your terminal",
+  "subcommands": [
+    { "name": "init", "description": "Print the line that starts hiruzen with each new terminal", "args": { "name": "shell", "suggestions": ["zsh", "bash", "fish", "pwsh", "powershell"] } },
+    { "name": "install", "description": "Add hiruzen to your shell's startup file", "args": { "name": "shell", "isOptional": true, "isVariadic": true, "suggestions": ["zsh", "bash", "fish", "pwsh", "powershell"] } },
+    { "name": "uninstall", "description": "Remove hiruzen from your shell's startup file", "args": { "name": "shell", "isOptional": true, "isVariadic": true, "suggestions": ["zsh", "bash", "fish", "pwsh", "powershell"] } },
+    { "name": ["integrations", "integration"], "description": "Manage which shells start hiruzen", "subcommands": [
+      { "name": "status", "description": "Show which shells start hiruzen", "args": { "name": "shell", "isOptional": true, "isVariadic": true, "suggestions": ["zsh", "bash", "fish", "pwsh", "powershell"] } },
+      { "name": "install", "description": "Add hiruzen to a shell's startup file", "args": { "name": "shell", "isOptional": true, "isVariadic": true, "suggestions": ["zsh", "bash", "fish", "pwsh", "powershell"] } },
+      { "name": "uninstall", "description": "Remove hiruzen from a shell's startup file", "args": { "name": "shell", "isOptional": true, "isVariadic": true, "suggestions": ["zsh", "bash", "fish", "pwsh", "powershell"] } }
+    ] },
+    { "name": "settings", "description": "List, read or change settings",
+      "subcommands": [
+        { "name": "all", "description": "List every setting and its value" },
+        { "name": "docs", "description": "Describe every setting" },
+        { "name": "open", "description": "Open the settings file" }
+      ],
+      "options": [ { "name": ["-d", "--delete"], "description": "Return a setting to its default", "args": { "name": "key", "suggestions": ["autocomplete.disable", "autocomplete.theme", "autocomplete.height", "autocomplete.descriptions", "autocomplete.fuzzySearch", "autocomplete.history", "autocomplete.disableForCommands", "autocomplete.enterAccepts"] } } ],
+      "args": [
+        { "name": "key", "isOptional": true, "suggestions": [
+          { "name": "autocomplete.disable", "description": "Turn suggestions off" },
+          { "name": "autocomplete.theme", "description": "Colours of the dropdown" },
+          { "name": "autocomplete.height", "description": "Most suggestions shown at once" },
+          { "name": "autocomplete.descriptions", "description": "Show descriptions beside suggestions" },
+          { "name": "autocomplete.fuzzySearch", "description": "Match anywhere in a suggestion" },
+          { "name": "autocomplete.history", "description": "Rank and suggest using shell history" },
+          { "name": "autocomplete.disableForCommands", "description": "Commands that get no suggestions" },
+          { "name": "autocomplete.enterAccepts", "description": "Enter inserts the highlighted suggestion" }
+        ] },
+        { "name": "value", "isOptional": true, "suggestions": ["true", "false"] }
+      ] },
+    { "name": "theme", "description": "Show or change the dropdown's colours", "options": [ { "name": ["-l", "--list"], "description": "Preview every theme" } ], "args": { "name": "name", "isOptional": true, "suggestions": ["dark", "light", "dracula", "nord", "gruvbox", "solarized"] } },
+    { "name": ["doctor", "diagnostic"], "description": "Check that hiruzen is set up correctly" },
+    { "name": "issue", "description": "Open a new issue with your system details filled in", "args": { "name": "title", "isOptional": true, "isVariadic": true } },
+    { "name": "complete", "description": "Print the suggestions for a partly typed command", "options": [ { "name": ["-s", "--shell"], "description": "Complete as this shell would", "args": { "name": "shell", "suggestions": ["zsh", "bash", "fish", "pwsh", "powershell", "cmd"] } } ], "args": { "name": "command" } },
+    { "name": "help", "description": "Show help" }
+  ],
+  "options": [
+    { "name": ["-s", "--shell"], "description": "Shell to start", "args": { "name": "shell", "suggestions": ["zsh", "bash", "fish", "pwsh", "powershell", "cmd"] } },
+    { "name": ["-l", "--login"], "description": "Start it as a login shell" },
+    { "name": "--auto", "description": "Exit quietly when already running or there is no terminal" },
+    { "name": ["-h", "--help"], "description": "Show help" },
+    { "name": ["-V", "--version"], "description": "Show the version" }
+  ]
+}

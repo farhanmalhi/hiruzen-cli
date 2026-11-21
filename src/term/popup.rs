@@ -6,9 +6,8 @@
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::engine::{Candidate, Kind};
+use crate::settings::{self, Theme};
 
-/// Most suggestions visible at once; the list scrolls beyond that.
-pub const MAX_VISIBLE: usize = 8;
 const MIN_NAME_WIDTH: usize = 12;
 const MAX_NAME_WIDTH: usize = 36;
 const MAX_DESCRIPTION_WIDTH: usize = 48;
@@ -16,12 +15,25 @@ const MAX_DESCRIPTION_WIDTH: usize = 48;
 const MIN_COLS: usize = 20;
 
 const RESET: &str = "\x1b[0m";
-const ROW: &str = "\x1b[0;38;5;252;48;5;236m";
-const ROW_DESCRIPTION: &str = "\x1b[0;38;5;245;48;5;236m";
-const SELECTED: &str = "\x1b[0;1;38;5;231;48;5;25m";
-const SELECTED_DESCRIPTION: &str = "\x1b[0;38;5;253;48;5;25m";
-const MARKER: &str = "\x1b[0;38;5;75;48;5;236m";
-const SELECTED_MARKER: &str = "\x1b[0;38;5;159;48;5;25m";
+
+/// How the dropdown looks, from the user's settings.
+#[derive(Debug, Clone, Copy)]
+pub struct Style {
+    pub theme: &'static Theme,
+    /// Most suggestions visible at once; the list scrolls beyond that.
+    pub max_visible: usize,
+    pub descriptions: bool,
+}
+
+impl Default for Style {
+    fn default() -> Self {
+        Style {
+            theme: settings::theme("dark"),
+            max_visible: 8,
+            descriptions: true,
+        }
+    }
+}
 
 /// Where the dropdown sits on screen and what each of its rows contains.
 #[derive(Debug, Clone, PartialEq)]
@@ -47,6 +59,7 @@ pub struct Request<'a> {
     pub command_row: usize,
     /// Column where the word being completed starts.
     pub anchor_col: usize,
+    pub style: Style,
 }
 
 /// A one-character tag for the kind of thing a suggestion is. Plain ASCII so
@@ -99,7 +112,9 @@ pub fn layout(request: &Request) -> Option<Layout> {
         cursor_row,
         command_row,
         anchor_col,
+        style,
     } = *request;
+    let theme = style.theme;
     // A dropdown drawn above must clear every row of a wrapped command.
     let command_row = command_row.min(cursor_row);
     if cols < MIN_COLS || rows < 3 {
@@ -117,11 +132,11 @@ pub fn layout(request: &Request) -> Option<Layout> {
         let width = (hint.width() + 2).min(cols).min(MAX_DESCRIPTION_WIDTH + MAX_NAME_WIDTH);
         (
             width,
-            vec![format!("{ROW_DESCRIPTION} {}{RESET}", fit(hint, width - 1))],
+            vec![format!("{} {}{RESET}", theme.description, fit(hint, width - 1))],
         )
     } else {
         let selected = selected.min(items.len() - 1);
-        let visible = MAX_VISIBLE.min(items.len()).min(room);
+        let visible = style.max_visible.max(1).min(items.len()).min(room);
         // Scroll in whole pages so the list does not shift on every key press.
         let first = (selected / visible) * visible;
         let page = &items[first..(first + visible).min(items.len())];
@@ -143,7 +158,7 @@ pub fn layout(request: &Request) -> Option<Layout> {
             })
             .max()
             .unwrap_or(0)
-            .min(MAX_DESCRIPTION_WIDTH);
+            .min(if style.descriptions { MAX_DESCRIPTION_WIDTH } else { 0 });
         // marker, space, name, [two spaces, description], trailing space
         let fixed = 2 + 1;
         let mut name_width = name_width;
@@ -171,9 +186,9 @@ pub fn layout(request: &Request) -> Option<Layout> {
             .map(|(i, candidate)| {
                 let is_selected = first + i == selected;
                 let (marker_style, name_style, description_style) = if is_selected {
-                    (SELECTED_MARKER, SELECTED, SELECTED_DESCRIPTION)
+                    (theme.selected_marker, theme.selected, theme.selected_description)
                 } else {
-                    (MARKER, ROW, ROW_DESCRIPTION)
+                    (theme.marker, theme.row, theme.description)
                 };
                 let mut line = format!(
                     "{marker_style}{} {name_style}{}",
@@ -259,6 +274,7 @@ mod tests {
             cursor_row,
             command_row: cursor_row,
             anchor_col,
+            style: Style::default(),
         }
     }
 
@@ -312,7 +328,7 @@ mod tests {
         let list = items(&refs);
         let mut req = request(&list, 0, 0);
         let first = layout(&req).unwrap();
-        assert_eq!(first.rows.len(), MAX_VISIBLE);
+        assert_eq!(first.rows.len(), 8);
         assert!(plain(first.rows.last().unwrap()).ends_with('v'));
         req.selected = 9;
         let second = layout(&req).unwrap();
@@ -331,6 +347,7 @@ mod tests {
             cursor_row: 0,
             command_row: 0,
             anchor_col: 2,
+            style: Style::default(),
         };
         let layout = layout(&req).unwrap();
         assert_eq!(layout.rows.len(), 1);
@@ -351,6 +368,7 @@ mod tests {
             cursor_row: 0,
             command_row: 0,
             anchor_col: 0,
+            style: Style::default(),
         };
         assert!(layout(&req).is_none());
     }

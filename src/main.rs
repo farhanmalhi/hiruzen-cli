@@ -1,6 +1,8 @@
 //! hiruzen: dropdown autocomplete for the terminal.
 
+mod commands;
 mod engine;
+mod settings;
 mod shell;
 mod specs;
 mod term;
@@ -17,6 +19,13 @@ hiruzen - suggests the next word as you type in your terminal
 USAGE:
     hiruzen [OPTIONS]              Start your shell with suggestions
     hiruzen init <SHELL>           Print the line that starts hiruzen with each new terminal
+    hiruzen install [SHELL...]     Add that line to your shell's startup file for you
+    hiruzen uninstall [SHELL...]   Remove it again
+    hiruzen integrations status    Show which shells start hiruzen
+    hiruzen settings [KEY [VALUE]] List, read or change settings (also: docs, open, --delete KEY)
+    hiruzen theme [NAME | --list]  Show or change the dropdown's colours
+    hiruzen doctor                 Check that hiruzen is set up correctly
+    hiruzen issue [TITLE]          Open a new issue with your system details filled in
     hiruzen complete <COMMAND>     Print the suggestions for a partly typed command
     hiruzen --help | --version
 
@@ -56,6 +65,16 @@ fn run(args: &[String]) -> Result<i32, String> {
         }
         Some("init") => init(args.get(1).map(String::as_str)),
         Some("complete") => complete(&args[1..]),
+        Some("settings") => commands::settings(&args[1..]),
+        Some("theme") => commands::theme(&args[1..]),
+        Some("integrations" | "integration") => commands::integrations(&args[1..]),
+        Some(action @ ("install" | "uninstall")) => {
+            let mut forwarded = vec![action.to_string()];
+            forwarded.extend_from_slice(&args[1..]);
+            commands::integrations(&forwarded)
+        }
+        Some("doctor" | "diagnostic" | "diagnostics") => commands::doctor(),
+        Some("issue") => commands::issue(&args[1..]),
         _ => start(args),
     }
 }
@@ -150,6 +169,15 @@ fn complete(args: &[String]) -> Result<i32, String> {
     let line = words.join(" ");
     let cwd = std::env::current_dir().map_err(|e| format!("cannot read the current directory: {e}"))?;
     let engine = Engine::system(shell);
+    let settings = settings::Settings::load();
+    if settings.disable {
+        return Ok(1);
+    }
+    engine.set_options(engine::Options {
+        fuzzy: settings.fuzzy,
+        history: settings.history,
+        disabled_commands: settings.disabled_commands,
+    });
     let Some(completion) = engine.complete(&line, &cwd) else {
         return Ok(1);
     };

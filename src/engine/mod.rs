@@ -97,6 +97,22 @@ pub struct Completion {
     pub hint: Option<String>,
 }
 
+/// Checks that the engine that runs spec code works, by running a trivial
+/// generator through it.
+pub fn self_test() -> bool {
+    let module = || Some("({ args: { generators: { custom: async () => [{ name: 'ok' }] } } })".to_string());
+    let output = js::run(
+        "__selftest__",
+        &module,
+        &serde_json::json!(["args", "generators"]),
+        &["selftest".to_string()],
+        ".",
+        &std::collections::HashMap::new(),
+        &|_| String::new(),
+    );
+    output.is_some_and(|output| output.items.len() == 1)
+}
+
 /// The keystrokes that turn the typed token into the accepted suggestion.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Edit {
@@ -144,7 +160,29 @@ pub struct Engine {
     specs: SpecStore,
     generators: Generators,
     history: RwLock<History>,
+    options: RwLock<Options>,
     path_commands: OnceLock<Vec<String>>,
+}
+
+/// The parts of the user's settings that change what is suggested.
+#[derive(Debug, Clone)]
+pub struct Options {
+    /// Match anywhere in a suggestion, not only at its start.
+    pub fuzzy: bool,
+    /// Use shell history to rank and to suggest.
+    pub history: bool,
+    /// Commands that get no suggestions.
+    pub disabled_commands: Vec<String>,
+}
+
+impl Default for Options {
+    fn default() -> Self {
+        Options {
+            fuzzy: true,
+            history: true,
+            disabled_commands: Vec::new(),
+        }
+    }
 }
 
 impl Engine {
@@ -154,6 +192,7 @@ impl Engine {
             specs: SpecStore::embedded(),
             generators,
             history: RwLock::new(history),
+            options: RwLock::new(Options::default()),
             path_commands: OnceLock::new(),
         }
     }
@@ -162,6 +201,12 @@ impl Engine {
     /// history file is read.
     pub fn system(shell: Shell) -> Self {
         Self::new(shell, History::load(shell), Generators::system())
+    }
+
+    pub fn set_options(&self, options: Options) {
+        if let Ok(mut current) = self.options.write() {
+            *current = options;
+        }
     }
 
     /// Notes a command the user just ran so it influences later ranking.
@@ -179,14 +224,22 @@ impl Engine {
         // `FOO=bar cmd` runs cmd; the assignments are not part of what is completed.
         let done: Vec<Token> = parsed.done.into_iter().skip_while(|t| is_assignment(&t.text)).collect();
 
-        let history = self.history.read().ok()?;
+        let options = self.options.read().ok()?.clone();
+        if let Some(root) = done.first() {
+            if options.disabled_commands.contains(&command_name(&root.text)) {
+                return None;
+            }
+        }
+        let recorded = self.history.read().ok()?;
+        let no_history = History::default();
+        let history: &History = if options.history { &recorded } else { &no_history };
         let mut has_spec = false;
         let (mut items, hint) = match done.split_first() {
             None => {
                 if active.text.is_empty() {
                     return None;
                 }
-                (self.command_names(&history), None)
+                (self.command_names(history), None)
             }
             Some((root, rest)) => {
                 let root_name = command_name(&root.text);
@@ -245,7 +298,7 @@ impl Engine {
             !matches!(c.kind, Kind::Arg | Kind::File) || !context.get(1..).unwrap_or(&[]).contains(&c.name.as_str())
         });
 
-        let items = rank(items, &active.text, &context, &history);
+        let items = rank(items, &active.text, &context, history, options.fuzzy);
         // The hint names the argument expected next; once the user is typing
         // it, a box that only repeats the argument's name is noise.
         let hint = hint.filter(|_| active.text.is_empty());
@@ -721,7 +774,7 @@ fn match_candidate(candidate: &Candidate, needle: &str, needle_lower: &str) -> O
 }
 
 /// Filters candidates to those matching `needle` and orders them best first.
-fn rank(items: Vec<Candidate>, needle: &str, context: &[&str], history: &History) -> Vec<Candidate> {
+fn rank(items: Vec<Candidate>, needle: &str, context: &[&str], history: &History, fuzzy: bool) -> Vec<Candidate> {
     let needle_lower = needle.to_lowercase();
     let mut seen: HashSet<String> = HashSet::new();
     let mut scored: Vec<(Match, f64, usize, Candidate)> = Vec::new();
@@ -733,8 +786,8 @@ fn rank(items: Vec<Candidate>, needle: &str, context: &[&str], history: &History
             Match::ExactPrefix
         } else {
             match match_candidate(&candidate, needle, &needle_lower) {
-                Some(quality) => quality,
-                None => continue,
+                Some(quality) if fuzzy || quality >= Match::Prefix => quality,
+                _ => continue,
             }
         };
         if !seen.insert(candidate.name.clone()) {
@@ -971,10 +1024,15 @@ mod tests {
             Candidate::new("reset", Kind::Subcommand),
             Candidate::new("restore", Kind::Subcommand),
         ];
-        let got: Vec<String> = rank(items, "st", &["git"], &history)
+        let got: Vec<String> = rank(items.clone(), "st", &["git"], &history, true)
             .into_iter()
             .map(|c| c.name)
             .collect();
         assert_eq!(got, vec!["stash", "status", "restore", "reset"]);
+        let strict: Vec<String> = rank(items, "st", &["git"], &history, false)
+            .into_iter()
+            .map(|c| c.name)
+            .collect();
+        assert_eq!(strict, vec!["stash", "status"]);
     }
 }

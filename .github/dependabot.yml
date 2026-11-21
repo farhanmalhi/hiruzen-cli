@@ -1,0 +1,26 @@
+version: 2
+updates:
+  # Rust crates (Cargo.toml / Cargo.lock at the repo root)
+  - package-ecosystem: "cargo"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    groups:
+      # One PR for all minor and patch bumps; major bumps come separately.
+      cargo-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # Spec generator tooling (tools/specgen/package.json)
+  - package-ecosystem: "npm"
+    directory: "/tools/specgen"
+    schedule:
+      interval: "weekly"
+    groups:
+      npm-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # Actions used by the workflows in .github/workflows
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

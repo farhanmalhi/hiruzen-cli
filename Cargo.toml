@@ -5,6 +5,7 @@ edition = "2021"
 rust-version = "1.91"
 description = "Dropdown autocomplete for your terminal: suggests the next word as you type, on Windows, Linux and macOS"
 license = "MIT"
+repository = "https://github.com/yieldwerx-sc/hiruzen-cli"
 keywords = ["autocomplete", "terminal", "shell", "cli", "completion"]
 categories = ["command-line-utilities"]
 exclude = ["tools/", ".github/"]

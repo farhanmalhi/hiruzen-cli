@@ -11,14 +11,15 @@ use std::io::{Read, Write};
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, SystemTime};
 
 use portable_pty::{native_pty_system, CommandBuilder, MasterPty, PtySize};
 
-use crate::engine::{self, Completion, Engine};
+use crate::engine::{self, Completion, Engine, Options};
+use crate::settings::{self, Settings};
 use crate::shell::Shell;
 use crate::term::marks::{Chunk, Mark, Scanner};
-use crate::term::popup::{self, Request};
+use crate::term::popup::{self, Request, Style};
 use crate::term::screen::{Anchor, Screen};
 use crate::term::stream::Stream;
 
@@ -129,6 +130,11 @@ struct Session {
     dismissed: Option<String>,
     /// The user is walking shell history with the arrow keys; stay out of the way.
     browsing_history: bool,
+    settings: Settings,
+    /// The settings file's modification time when it was last read.
+    settings_stamp: Option<SystemTime>,
+    /// The user has moved the highlight in the dropdown now showing.
+    moved: bool,
     requests: Sender<CompletionRequest>,
     pty: Box<dyn Write + Send>,
 }
@@ -166,7 +172,12 @@ impl Session {
     /// Sequences that draw the dropdown for the current completion, if it
     /// should be showing.
     fn draw(&mut self) -> String {
-        if self.line.is_none() || self.browsing_history || self.dismissed.is_some() || self.screen.alternate() {
+        if self.settings.disable
+            || self.line.is_none()
+            || self.browsing_history
+            || self.dismissed.is_some()
+            || self.screen.alternate()
+        {
             return String::new();
         }
         let Some(completion) = &self.completion else {
@@ -187,6 +198,11 @@ impl Session {
             cursor_row: cursor_row.into(),
             command_row: command_row.into(),
             anchor_col: self.popup_col.into(),
+            style: Style {
+                theme: self.settings.theme,
+                max_visible: self.settings.height,
+                descriptions: self.settings.descriptions,
+            },
         };
         let Some(layout) = popup::layout(&request) else {
             return String::new();
@@ -217,6 +233,34 @@ impl Session {
         let mut out = self.erase();
         out.push_str(&self.draw());
         self.write_terminal(out.as_bytes());
+    }
+
+    /// Reads the settings file and puts its values into effect.
+    fn apply_settings(&mut self) {
+        self.settings_stamp = settings::modified();
+        self.settings = Settings::load();
+        self.engine.set_options(Options {
+            fuzzy: self.settings.fuzzy,
+            history: self.settings.history,
+            disabled_commands: self.settings.disabled_commands.clone(),
+        });
+        if self.settings.disable {
+            self.completion = None;
+        }
+    }
+
+    /// Types the highlighted suggestion into the shell.
+    fn accept(&mut self) {
+        let edit = self
+            .completion
+            .as_ref()
+            .and_then(|completion| engine::edit_for(&completion.token, completion.items.get(self.selected)?));
+        if let Some(edit) = edit {
+            let mut keys = "\x7f".repeat(edit.backspaces);
+            keys.push_str(&edit.text);
+            keys.push_str(&"\x1b[D".repeat(edit.cursor_back));
+            self.write_shell(keys.as_bytes());
+        }
     }
 
     fn selectable(&self) -> bool {
@@ -263,7 +307,12 @@ impl Session {
         }
 
         match &self.line {
-            Some(line) if !line.trim().is_empty() && self.dismissed.is_none() && !self.browsing_history => {
+            Some(line)
+                if !line.trim().is_empty()
+                    && self.dismissed.is_none()
+                    && !self.browsing_history
+                    && !self.settings.disable =>
+            {
                 let _ = self.requests.send(CompletionRequest {
                     version: self.version,
                     line: line.clone(),
@@ -291,6 +340,11 @@ impl Session {
                     self.anchor = Some(self.screen.anchor());
                     self.dismissed = None;
                     self.browsing_history = false;
+                    // A new prompt is a cheap, natural moment to notice edits
+                    // to the settings file.
+                    if settings::modified() != self.settings_stamp {
+                        self.apply_settings();
+                    }
                 }
                 Chunk::Mark(Mark::Cwd(path)) => {
                     self.cwd = normalize_cwd(&path, self.shell);
@@ -315,6 +369,7 @@ impl Session {
             .unwrap_or(cursor_col);
         self.completion = result;
         self.selected = 0;
+        self.moved = false;
         self.refresh();
     }
 
@@ -324,24 +379,22 @@ impl Session {
             let count = self.completion.as_ref().map_or(0, |c| c.items.len());
             match key {
                 Key::Tab => {
-                    let edit = self.completion.as_ref().and_then(|completion| {
-                        engine::edit_for(&completion.token, completion.items.get(self.selected)?)
-                    });
-                    if let Some(edit) = edit {
-                        let mut keys = "\x7f".repeat(edit.backspaces);
-                        keys.push_str(&edit.text);
-                        keys.push_str(&"\x1b[D".repeat(edit.cursor_back));
-                        self.write_shell(keys.as_bytes());
-                    }
+                    self.accept();
+                    return;
+                }
+                Key::Other if self.settings.enter_accepts && self.moved && matches!(bytes, b"\r" | b"\n") => {
+                    self.accept();
                     return;
                 }
                 Key::Down => {
                     self.selected = (self.selected + 1) % count;
+                    self.moved = true;
                     self.refresh();
                     return;
                 }
                 Key::Up if self.selected > 0 => {
                     self.selected -= 1;
+                    self.moved = true;
                     self.refresh();
                     return;
                 }
@@ -560,9 +613,14 @@ pub fn run(shell: Shell, login: bool) -> Result<i32, String> {
         drawn: None,
         dismissed: None,
         browsing_history: false,
+        settings: Settings::default(),
+        settings_stamp: None,
+        moved: false,
         requests,
         pty: writer,
     };
+
+    session.apply_settings();
 
     // Start from an empty screen so the model and the terminal agree.
     session.write_terminal(b"\x1b[H\x1b[2J");
