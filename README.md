@@ -15,10 +15,10 @@ It is a single Rust binary with the completion specs embedded, so there is
 nothing else to install. The only network requests are the registry searches
 and the daily check for a new version described under
 [Privacy and security](#privacy-and-security); a setting turns each off. It runs on macOS
-and Linux with zsh, bash, fish and PowerShell. Windows (PowerShell, Git Bash,
-cmd) builds and passes its tests, but is
-[not yet tried in a live terminal](docs/testing.md). If hiruzen cannot
-start, your shell opens as normal.
+and Linux with zsh, bash, fish and PowerShell, and on Windows with Windows
+PowerShell 5 and cmd. PowerShell 7 and Git Bash on Windows build and pass
+their tests, but are [not yet tried in a live terminal](docs/testing.md). If
+hiruzen cannot start, your shell opens as normal.
 
 Website: <https://hiruzen.farhanmalhi.com/>
 

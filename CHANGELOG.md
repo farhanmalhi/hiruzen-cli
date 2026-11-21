@@ -96,6 +96,11 @@ All notable changes to hiruzen are recorded here. The format follows
   online suggestions are on.
 - After clearing the screen with Ctrl+L, suggestions keep working on the
   line you were typing.
+- **The dropdown now works on Windows.** It has been tried in live sessions
+  in Windows PowerShell 5 and cmd. Before, the prompt was read as part of
+  the command, so the wrong words were suggested; Tab, the arrow keys and
+  Escape went past the dropdown; and `cd` suggested no folders. PowerShell 7
+  and Git Bash on Windows are still untried.
 
 ## [0.1.0] - 2026-11-21
 

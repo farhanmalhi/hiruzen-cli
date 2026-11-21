@@ -5,7 +5,8 @@
 | macOS (Apple silicon) | zsh 5.9, bash 3.2 | Tested in live sessions |
 | Linux (arm64, Debian 12) | bash 5.2, zsh 5.9, fish 3.6, PowerShell 7.4 | Tested in live sessions |
 | macOS | fish, PowerShell 7 | Not tested; the same scripts pass on Linux |
-| Windows | PowerShell 7, Windows PowerShell 5, Git Bash, cmd | Builds and passes the unit tests in CI on Windows; the dropdown has not yet been tried in a live Windows terminal |
+| Windows 11 (x64) | Windows PowerShell 5.1, cmd | Tested in live sessions |
+| Windows | PowerShell 7, Git Bash | Not tested in a live session; builds and passes the unit tests in CI on Windows |
 
 An automated suite of 71 edge cases runs the real shells on Linux: bad
 quotes, pasted text, tiny and resized windows, long wrapped commands, a
@@ -26,8 +27,14 @@ hiruzen has also been run inside tmux on Linux, and `hiruzen ssh` against
 remote bash, zsh and fish on a local test server. It has not been tried over
 SSH to a real server or through a jump host.
 
-The unit tests pass on macOS, Linux and Windows. Until the dropdown has been
-used in a real Windows terminal, treat Windows support as experimental.
+The unit tests pass on macOS, Linux and Windows.
+
+On Windows the dropdown was tried in Windows PowerShell 5.1 and cmd: typing,
+accepting with Tab, moving the highlight, folders after `cd`, a second
+prompt, clearing the screen with Ctrl+L and resizing the window, all with a
+command half typed. The edge-case suite does not run on Windows, and
+PowerShell 7 and Git Bash have not been tried there, so treat those two as
+experimental.
 
 ## Start-up time
 
