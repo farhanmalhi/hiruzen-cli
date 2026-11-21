@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 rust-version = "1.91"
 description = "Dropdown autocomplete for your terminal: suggests the next word as you type, on Windows, Linux and macOS"
+license = "MIT"
 keywords = ["autocomplete", "terminal", "shell", "cli", "completion"]
 categories = ["command-line-utilities"]
 exclude = ["tools/", ".github/"]

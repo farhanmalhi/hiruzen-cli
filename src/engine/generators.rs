@@ -40,8 +40,15 @@ pub trait Runner: Send + Sync {
     /// Runs a command and returns everything about how it went.
     fn exec(&self, argv: &[String], cwd: &Path, _env: &EnvChanges) -> Output {
         match self.run(argv, cwd) {
-            Some(stdout) => Output { stdout, stderr: String::new(), status: 0 },
-            None => Output { status: 1, ..Output::default() },
+            Some(stdout) => Output {
+                stdout,
+                stderr: String::new(),
+                status: 0,
+            },
+            None => Output {
+                status: 1,
+                ..Output::default()
+            },
         }
     }
 }
@@ -55,8 +62,13 @@ impl Runner for SystemRunner {
     }
 
     fn exec(&self, argv: &[String], cwd: &Path, env: &EnvChanges) -> Output {
-        let failed = Output { status: 1, ..Output::default() };
-        let Some((program, args)) = argv.split_first() else { return failed };
+        let failed = Output {
+            status: 1,
+            ..Output::default()
+        };
+        let Some((program, args)) = argv.split_first() else {
+            return failed;
+        };
         let mut command = Command::new(program);
         command
             .args(args)
@@ -185,7 +197,13 @@ impl Generators {
 
     /// Suggestions for one generator of an argument.
     pub fn generate(&self, generator: &Generator, request: &Request, specs: &SpecStore) -> Vec<Candidate> {
-        let Request { root, token, cwd, shell, .. } = *request;
+        let Request {
+            root,
+            token,
+            cwd,
+            shell,
+            ..
+        } = *request;
         let mut out = Vec::new();
         for template in &generator.template {
             out.extend(self.template(template, token, cwd, shell));
@@ -221,10 +239,13 @@ impl Generators {
                     .take(MAX_ITEMS)
                     .map(|item| Candidate::new(item, Kind::Arg))
                     .collect();
-                let query = generator.get_query_term.as_deref().map(|separator| match token.rfind(separator) {
-                    Some(at) => &token[at + separator.len()..],
-                    None => token,
-                });
+                let query = generator
+                    .get_query_term
+                    .as_deref()
+                    .map(|separator| match token.rfind(separator) {
+                        Some(at) => &token[at + separator.len()..],
+                        None => token,
+                    });
                 out.extend(narrow_to_query(items, token, query));
             }
         } else if generator.dynamic {
@@ -248,7 +269,10 @@ impl Generators {
             };
             let env: Vec<(String, Option<String>)> = input.env.unwrap_or_default().into_iter().collect();
             let output = if argv.is_empty() {
-                Arc::new(Output { status: 1, ..Output::default() })
+                Arc::new(Output {
+                    status: 1,
+                    ..Output::default()
+                })
             } else {
                 self.exec(argv, &cwd, &env)
             };
@@ -259,7 +283,10 @@ impl Generators {
         let env: HashMap<String, String> = ["HOME", "USER", "PATH", "SHELL", "USERPROFILE"]
             .iter()
             .filter_map(|name| Some((name.to_string(), std::env::var(name).ok()?)))
-            .chain(std::iter::once(("PWD".to_string(), request.cwd.to_string_lossy().into_owned())))
+            .chain(std::iter::once((
+                "PWD".to_string(),
+                request.cwd.to_string_lossy().into_owned(),
+            )))
             .collect();
         js::run(
             request.spec_key,
@@ -385,7 +412,7 @@ impl Generators {
                 .run(&["git", "status", "--short", "--untracked-files=all"], cwd)
                 .as_ref()
             {
-                Some(output) => parse_git_status(&output),
+                Some(output) => parse_git_status(output),
                 None => Vec::new(),
             },
             "git:getChangedTrackedFiles" => {
@@ -434,7 +461,9 @@ fn js_candidates(output: js::Output, token: &str) -> Vec<Candidate> {
             let names: Vec<String> = match &item.name {
                 serde_json::Value::String(name) => vec![name.clone()],
                 serde_json::Value::Number(name) => vec![name.to_string()],
-                serde_json::Value::Array(names) => names.iter().filter_map(|n| n.as_str().map(str::to_string)).collect(),
+                serde_json::Value::Array(names) => {
+                    names.iter().filter_map(|n| n.as_str().map(str::to_string)).collect()
+                }
                 _ => Vec::new(),
             };
             let (name, aliases) = names.split_first()?;
@@ -465,7 +494,10 @@ fn js_candidates(output: js::Output, token: &str) -> Vec<Candidate> {
 /// are re-expressed against the whole word, so matching and replacement work
 /// the same as for every other candidate.
 fn narrow_to_query(items: Vec<Candidate>, token: &str, query: Option<&str>) -> Vec<Candidate> {
-    let Some(prefix) = query.and_then(|query| token.strip_suffix(query)).filter(|prefix| !prefix.is_empty()) else {
+    let Some(prefix) = query
+        .and_then(|query| token.strip_suffix(query))
+        .filter(|prefix| !prefix.is_empty())
+    else {
         return items;
     };
     items
@@ -475,7 +507,11 @@ fn narrow_to_query(items: Vec<Candidate>, token: &str, query: Option<&str>) -> V
                 candidate.display = Some(candidate.name.clone());
             }
             candidate.insert = candidate.insert.take().map(|insert| format!("{prefix}{insert}"));
-            candidate.aliases = candidate.aliases.iter().map(|alias| format!("{prefix}{alias}")).collect();
+            candidate.aliases = candidate
+                .aliases
+                .iter()
+                .map(|alias| format!("{prefix}{alias}"))
+                .collect();
             candidate.name = format!("{prefix}{}", candidate.name);
             candidate
         })

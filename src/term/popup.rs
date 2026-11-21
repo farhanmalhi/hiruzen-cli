@@ -83,7 +83,7 @@ pub fn fit(text: &str, width: usize) -> String {
         out.push('…');
         used += 1;
     }
-    out.extend(std::iter::repeat(' ').take(width.saturating_sub(used)));
+    out.extend(std::iter::repeat_n(' ', width.saturating_sub(used)));
     out
 }
 

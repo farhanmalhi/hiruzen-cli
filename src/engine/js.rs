@@ -67,6 +67,9 @@ struct Runtime {
     loaded: HashMap<String, bool>,
 }
 
+type ModulePtr<'a> = *const (dyn Fn() -> Option<String> + Sync + 'a);
+type ExecPtr<'a> = *const (dyn Fn(ExecRequest) -> String + Sync + 'a);
+
 /// One generator to run, handed to the engine thread.
 struct Job {
     key: String,
@@ -74,8 +77,8 @@ struct Job {
     tokens: Vec<String>,
     cwd: String,
     env: HashMap<String, String>,
-    module: *const (dyn Fn() -> Option<String> + Sync),
-    exec: *const (dyn Fn(ExecRequest) -> String + Sync),
+    module: ModulePtr<'static>,
+    exec: ExecPtr<'static>,
     reply: mpsc::Sender<Option<Output>>,
 }
 
@@ -85,7 +88,7 @@ unsafe impl Send for Job {}
 
 thread_local! {
     // The callback for the generator currently running on the engine thread.
-    static EXEC: RefCell<Option<*const (dyn Fn(ExecRequest) -> String + Sync)>> = const { RefCell::new(None) };
+    static EXEC: RefCell<Option<ExecPtr<'static>>> = const { RefCell::new(None) };
 }
 
 /// `__hz_exec(json)`: the only way out of the engine.
@@ -93,7 +96,9 @@ fn host_exec(_this: &JsValue, args: &[JsValue], context: &mut Context) -> JsResu
     let failed = || JsValue::from(JsString::from(r#"{"stdout":"","stderr":"","status":1}"#));
     let Some(input) = args.first() else { return Ok(failed()) };
     let input = input.to_string(context)?.to_std_string_escaped();
-    let Ok(request) = serde_json::from_str::<ExecRequest>(&input) else { return Ok(failed()) };
+    let Ok(request) = serde_json::from_str::<ExecRequest>(&input) else {
+        return Ok(failed());
+    };
     let pointer = EXEC.with(|exec| *exec.borrow());
     let Some(pointer) = pointer else { return Ok(failed()) };
     // SAFETY: set by `execute` for the job being run, whose caller is blocked
@@ -109,7 +114,10 @@ fn new_runtime() -> Option<Runtime> {
         .register_global_callable(JsString::from("__hz_exec"), 1, NativeFunction::from_fn_ptr(host_exec))
         .ok()?;
     context.eval(Source::from_bytes(SHIM.as_bytes())).ok()?;
-    Some(Runtime { context, loaded: HashMap::new() })
+    Some(Runtime {
+        context,
+        loaded: HashMap::new(),
+    })
 }
 
 /// Clears the callback when a job ends, however it ends.
@@ -155,7 +163,9 @@ fn execute(runtime: &mut Runtime, job: &Job) -> Option<Output> {
     let promise = runtime.context.eval(Source::from_bytes(call.as_bytes())).ok()?;
     let _ = runtime.context.run_jobs();
     let promise = JsPromise::from_object(promise.as_object()?).ok()?;
-    let PromiseState::Fulfilled(value) = promise.state() else { return None };
+    let PromiseState::Fulfilled(value) = promise.state() else {
+        return None;
+    };
     let json = value.as_string()?.to_std_string_escaped();
     serde_json::from_str::<Option<Output>>(&json).ok()?
 }
@@ -208,16 +218,16 @@ pub fn run(
     // SAFETY: erases the borrows' lifetimes so they can cross to the engine
     // thread. This function does not return until the engine has replied or
     // dropped the job, so the closures outlive every use of the pointers.
-    let module: *const (dyn Fn() -> Option<String> + Sync + '_) = module;
-    let exec: *const (dyn Fn(ExecRequest) -> String + Sync + '_) = exec;
+    let module: ModulePtr<'_> = module;
+    let exec: ExecPtr<'_> = exec;
     let job = Job {
         key: key.to_string(),
         path: path.to_string(),
         tokens: tokens.to_vec(),
         cwd: cwd.to_string(),
         env: env.clone(),
-        module: unsafe { std::mem::transmute::<_, *const (dyn Fn() -> Option<String> + Sync + 'static)>(module) },
-        exec: unsafe { std::mem::transmute::<_, *const (dyn Fn(ExecRequest) -> String + Sync + 'static)>(exec) },
+        module: unsafe { std::mem::transmute::<ModulePtr<'_>, ModulePtr<'static>>(module) },
+        exec: unsafe { std::mem::transmute::<ExecPtr<'_>, ExecPtr<'static>>(exec) },
         reply,
     };
     engine_thread()?.lock().ok()?.send(job).ok()?;
@@ -231,7 +241,10 @@ mod tests {
 
     fn exec_table(request: ExecRequest) -> String {
         let line = match (&request.command, &request.shell) {
-            (Some(command), _) => std::iter::once(command.clone()).chain(request.args.clone()).collect::<Vec<_>>().join(" "),
+            (Some(command), _) => std::iter::once(command.clone())
+                .chain(request.args.clone())
+                .collect::<Vec<_>>()
+                .join(" "),
             (None, Some(shell)) => shell.clone(),
             _ => String::new(),
         };
@@ -255,7 +268,15 @@ mod tests {
 
     fn run_path(key: &str, path: serde_json::Value, tokens: &[&str]) -> Option<Output> {
         let tokens: Vec<String> = tokens.iter().map(|t| t.to_string()).collect();
-        run(key, &|| Some(MODULE.to_string()), &path, &tokens, "/tmp", &HashMap::new(), &exec_table)
+        run(
+            key,
+            &|| Some(MODULE.to_string()),
+            &path,
+            &tokens,
+            "/tmp",
+            &HashMap::new(),
+            &exec_table,
+        )
     }
 
     #[test]
@@ -268,7 +289,12 @@ mod tests {
 
     #[test]
     fn runs_async_custom_generators_that_call_back_for_commands() {
-        let out = run_path("tool", serde_json::json!(["args", 1, "generators", 0]), &["tool", "alpha", ""]).unwrap();
+        let out = run_path(
+            "tool",
+            serde_json::json!(["args", 1, "generators", 0]),
+            &["tool", "alpha", ""],
+        )
+        .unwrap();
         assert_eq!(out.items.len(), 1);
         assert_eq!(out.items[0].name, "inner");
         assert_eq!(out.items[0].priority, 80);
@@ -276,7 +302,12 @@ mod tests {
 
     #[test]
     fn reports_the_query_term() {
-        let out = run_path("tool", serde_json::json!(["args", 2, "generators"]), &["tool", "a", "b", "x,al"]).unwrap();
+        let out = run_path(
+            "tool",
+            serde_json::json!(["args", 2, "generators"]),
+            &["tool", "a", "b", "x,al"],
+        )
+        .unwrap();
         assert_eq!(out.query.as_deref(), Some("al"));
         assert_eq!(out.items.len(), 2);
     }
@@ -292,7 +323,15 @@ mod tests {
     #[test]
     fn a_module_that_fails_to_load_yields_nothing() {
         let tokens = vec!["x".to_string()];
-        let out = run("broken", &|| Some("(function(){ syntax error".to_string()), &serde_json::json!([]), &tokens, "/tmp", &HashMap::new(), &exec_table);
+        let out = run(
+            "broken",
+            &|| Some("(function(){ syntax error".to_string()),
+            &serde_json::json!([]),
+            &tokens,
+            "/tmp",
+            &HashMap::new(),
+            &exec_table,
+        );
         assert!(out.is_none());
     }
 }

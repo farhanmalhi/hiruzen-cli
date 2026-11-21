@@ -36,7 +36,7 @@ $ git ch
 ### 1. Build the binary
 
 hiruzen is built from source. You need a [Rust toolchain](https://rustup.rs),
-version 1.80 or newer. From a clone of this repository:
+version 1.91 or newer. From a clone of this repository:
 
 ```sh
 cargo install --locked --path .
@@ -183,9 +183,15 @@ commands, plus separate specs for the services of large tools such as `aws`,
   read-only commands in the current directory: `git` to list branches, tags
   and changed files, and the listing commands that a tool's spec names (for
   example a spec may run its tool to list its resources). Each command has no
-  input, is stopped after 1.5 seconds, and has its result reused for 4
+  input, is stopped after 3 seconds, and has its result reused for 4
   seconds. These commands come from the embedded spec library, not from the
   directory you are in.
+- **Spec code runs in a sandbox.** Many specs compute suggestions with
+  JavaScript: parsing a command's output, or choosing which command to run.
+  hiruzen runs that code in an embedded JavaScript engine that has no file,
+  network or timer access. The only thing the code can do is ask hiruzen to
+  run a command, under the limits above. A spec that would fetch from the
+  network (for example searching the npm registry) gets no result.
 - **Temporary files.** The integration scripts are written to a private
   directory (`hiruzen-<pid>` under the system temp directory, mode `0700` on
   macOS and Linux) and removed when the session ends.
@@ -202,13 +208,13 @@ commands, plus separate specs for the services of large tools such as `aws`,
   what you have typed. They are hidden inside full-screen programs such as
   `vim` and `less`.
 - In a pipeline, only the last command is completed.
-- Many specs compute some suggestions with JavaScript, which hiruzen does not
-  run. Native replacements exist for git, npm and yarn dependencies and
-  scripts, ssh hosts, make targets and directory arguments. For other tools
-  the output of the spec's command is parsed heuristically (first column, or
-  the name field of JSON output), and suggestions that need a pure JavaScript
-  function (for example Kubernetes resource names) are not offered. Their
-  subcommands and options still complete.
+- Live suggestions depend on the tool being installed and able to answer.
+  Kubernetes resource names, for example, need a reachable cluster, and a
+  command that takes longer than 3 seconds gives no suggestions.
+- Suggestions that a spec fetches from the network are not offered, because
+  hiruzen stays offline. Six tools in the library (`az`, `heroku`,
+  `shopify`, `fig`, `infracost` and `@usermn/sdc`) build their whole spec in
+  code at run time; hiruzen does not do that, so they have no spec.
 - Colours, keys and the number of rows shown are fixed. There is no
   configuration file.
 - Nushell, Xonsh and other shells not listed above are not supported.
