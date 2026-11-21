@@ -15,8 +15,9 @@ $ git ch
 - **One binary, no runtime.** Written in Rust, with the completion specs
   embedded. Nothing else to install.
 - **Offline.** hiruzen makes no network requests.
-- **Cross-platform.** macOS, Linux and Windows, with zsh, bash, fish,
-  PowerShell and cmd.
+- **Cross-platform.** macOS and Linux with zsh, bash, fish and PowerShell.
+  Windows (PowerShell, Git Bash, cmd) builds and passes its tests, but is
+  [not yet tried in a live terminal](#what-has-been-tested).
 - **Safe to enable.** If hiruzen cannot start, your shell opens as normal.
 
 ## Contents
@@ -30,6 +31,8 @@ $ git ch
 - [Troubleshooting](#troubleshooting)
 - [Uninstall](#uninstall)
 - [Development](#development)
+- [Scope](#scope)
+- [Licence](#licence)
 - [Credits](#credits)
 
 ## Install
@@ -173,6 +176,18 @@ commands, plus separate specs for the services of large tools such as `aws`,
 | Windows PowerShell 5 (`powershell`) | Windows | PSReadLine's `ConsoleHost_history.txt` | |
 | cmd | Windows | none | Suggestions come from specs and live context only |
 
+### What has been tested
+
+| Platform | Shell | Status |
+| --- | --- | --- |
+| macOS (Apple silicon) | zsh 5.9, bash 3.2 | Tested in live sessions |
+| Linux (arm64, Debian 12) | bash 5.2, zsh 5.9, fish 3.6, PowerShell 7.4 | Tested in live sessions |
+| macOS | fish, PowerShell 7 | Not tested; the same scripts pass on Linux |
+| Windows | PowerShell 7, Windows PowerShell 5, Git Bash, cmd | Builds and passes the unit tests in CI on Windows; the dropdown has not yet been tried in a live Windows terminal |
+
+The unit tests pass on macOS, Linux and Windows. Until the dropdown has been
+used in a real Windows terminal, treat Windows support as experimental.
+
 ## Privacy and security
 
 - **No network access.** hiruzen sends nothing anywhere. The specs are inside
@@ -280,6 +295,17 @@ npm run build
 To move to a newer spec library, change the `@withfig/autocomplete` version in
 `tools/specgen/package.json` first. Run `cargo test` afterwards: it checks that
 every spec in the new archive still parses.
+
+## Scope
+
+hiruzen does one thing: autocomplete. It reuses the spec library from Fig
+(later Amazon Q Developer CLI) but is not a replacement for the rest of that
+product. It has no dotfile sync, scripts, plugin store, AI command
+generation, settings app, themes or team features.
+
+## Licence
+
+MIT; see [LICENSE](LICENSE).
 
 ## Credits
 
