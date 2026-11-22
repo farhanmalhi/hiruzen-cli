@@ -102,7 +102,7 @@ When the release workflow succeeds, the Scoop workflow
 release and commits it to `main`, so pull before your next change. It can
 also be run by hand from the Actions tab.
 
-The website, <https://hiruzen.farhanmalhi.com/>, is kept in a separate
+The website, [hiruzen.farhanmalhi.com](https://hiruzen.farhanmalhi.com/), is kept in a separate
 repository. When a release changes behaviour the site describes (keys,
 settings, what is sent over the network, supported shells), update the site
 in the same week.

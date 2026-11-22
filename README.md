@@ -23,7 +23,7 @@ PowerShell 5 and cmd. PowerShell 7 and Git Bash on Windows build and pass
 their tests, but are [not yet tried in a live terminal](docs/testing.md). If
 hiruzen cannot start, your shell opens as normal.
 
-Website: <https://hiruzen.farhanmalhi.com/>
+Website: [hiruzen.farhanmalhi.com](https://hiruzen.farhanmalhi.com/)
 
 ## Contents
 
