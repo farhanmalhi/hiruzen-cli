@@ -1208,13 +1208,14 @@ mod tests {
         assert_eq!(filtered[0], "develop");
     }
 
-    /// Answers like [`FakeRunner`], but takes its time over fetches, and
-    /// notes when a fetch starts and when it is over.
+    /// Answers like [`FakeRunner`], but holds each fetch until the test
+    /// releases it (or a safety timeout passes), noting when a fetch starts
+    /// and when it is over.
     struct SlowNetwork {
         answers: FakeRunner,
-        delay: std::time::Duration,
         started: std::sync::Arc<std::sync::atomic::AtomicBool>,
         finished: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        release: std::sync::Arc<(std::sync::Mutex<bool>, std::sync::Condvar)>,
     }
 
     impl Runner for SlowNetwork {
@@ -1222,7 +1223,11 @@ mod tests {
             use std::sync::atomic::Ordering;
             if argv.first().is_some_and(|program| program == "curl") {
                 self.started.store(true, Ordering::SeqCst);
-                std::thread::sleep(self.delay);
+                let (released, signal) = &*self.release;
+                let guard = released.lock().unwrap();
+                let _ = signal
+                    .wait_timeout_while(guard, std::time::Duration::from_secs(30), |released| !*released)
+                    .unwrap();
                 self.finished.store(true, Ordering::SeqCst);
             }
             self.answers.run(argv, cwd)
@@ -1232,22 +1237,24 @@ mod tests {
     #[test]
     fn a_slow_fetch_does_not_hold_up_quick_suggestions() {
         use std::sync::atomic::{AtomicBool, Ordering};
-        use std::sync::Arc;
+        use std::sync::{Arc, Condvar, Mutex};
         use std::time::{Duration, Instant};
-        // Whether the quick answers came back during the fetch is checked by
-        // order, not by time: other tests share the engine for spec code, so
-        // on a busy machine a quick answer can be slow without having waited
-        // for the fetch.
+        // The fetch lasts until the quick answers are in, however long a busy
+        // machine takes over them: other tests share the engine for spec
+        // code, so a quick answer can be slow without having waited for the
+        // fetch. Had it waited, the fetch ends only at its 30 second timeout,
+        // and the check below fails.
         let started = Arc::new(AtomicBool::new(false));
         let finished = Arc::new(AtomicBool::new(false));
+        let release = Arc::new((Mutex::new(false), Condvar::new()));
         let runner = SlowNetwork {
             answers: FakeRunner(vec![(
                 "curl",
                 r#"[{"package":{"name":"react","description":"UI library"}}]"#,
             )]),
-            delay: Duration::from_secs(3),
             started: started.clone(),
             finished: finished.clone(),
+            release: release.clone(),
         };
         let engine = Arc::new(Engine::new(
             Shell::Zsh,
@@ -1274,14 +1281,17 @@ mod tests {
         // and one that needs no network at all answer before it is over.
         let quick = engine.complete_quick("npm install reac", &cwd, false).unwrap();
         let local = engine.complete_quick("git ch", &cwd, false).unwrap();
-        assert!(
-            !finished.load(Ordering::SeqCst),
-            "quick suggestions waited for the fetch to finish"
-        );
+        let waited_for_fetch = finished.load(Ordering::SeqCst);
+
+        // Let the fetch finish before any assertion, so a failure cannot leave
+        // the background thread waiting.
+        *release.0.lock().unwrap() = true;
+        release.1.notify_all();
+        let full = background.join().unwrap().unwrap();
+
+        assert!(!waited_for_fetch, "quick suggestions waited for the fetch to finish");
         assert!(quick.loading);
         assert!(local.items.iter().any(|c| c.name == "checkout"), "{:?}", local.items);
-
-        let full = background.join().unwrap().unwrap();
         assert!(finished.load(Ordering::SeqCst));
         assert_eq!(full.items[0].name, "react", "{:?}", full.items);
     }
