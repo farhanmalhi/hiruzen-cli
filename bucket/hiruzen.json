@@ -1,12 +1,12 @@
 {
-    "version": "0.2.0",
+    "version": "0.2.1",
     "description": "Dropdown suggestions for your terminal: suggests the next word as you type, and learns how you work.",
     "homepage": "https://hiruzen.farhanmalhi.com/",
     "license": "MIT",
     "architecture": {
         "64bit": {
-            "url": "https://github.com/farhanmalhi/hiruzen-cli/releases/download/v0.2.0/hiruzen-cli-x86_64-pc-windows-msvc.zip",
-            "hash": "a954321a90a24cad254c6b15a8fd55eeb741838711d6ad25b741f78d2175af24"
+            "url": "https://github.com/farhanmalhi/hiruzen-cli/releases/download/v0.2.1/hiruzen-cli-x86_64-pc-windows-msvc.zip",
+            "hash": "b6ab52f2c8db76e2133248ffbe44c56b2f9134c219d668e0eec1786309665763"
         }
     },
     "bin": "hiruzen.exe",
