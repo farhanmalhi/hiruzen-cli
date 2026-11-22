@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/farhanmalhi/hiruzen-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/farhanmalhi/hiruzen-cli/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/farhanmalhi/hiruzen-cli)](https://github.com/farhanmalhi/hiruzen-cli/releases/latest)
+[![crates.io](https://img.shields.io/crates/v/hiruzen-cli)](https://crates.io/crates/hiruzen-cli)
 [![Downloads](https://img.shields.io/github/downloads/farhanmalhi/hiruzen-cli/total)](https://github.com/farhanmalhi/hiruzen-cli/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
