@@ -29,6 +29,47 @@ const RESIZE_POLL: Duration = Duration::from_millis(120);
 /// network, so a word typed quickly is searched for once and not per letter.
 const FETCH_DELAY: Duration = Duration::from_millis(150);
 
+/// Answers requests in full, fetches from the network included.
+///
+/// A request is fetched for once typing has paused for [`FETCH_DELAY`]; a
+/// newer one arriving before then takes its place, and `None` calls it off.
+/// A fetch already under way finishes, and its answer is dropped if the line
+/// has changed since.
+fn fetch_worker(engine: &Engine, inbox: &Receiver<Option<CompletionRequest>>, events: &Sender<Event>) {
+    let Ok(mut waiting) = inbox.recv() else { return };
+    loop {
+        match inbox.recv_timeout(FETCH_DELAY) {
+            Ok(newer) => {
+                waiting = newer;
+                continue;
+            }
+            Err(mpsc::RecvTimeoutError::Disconnected) => return,
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+        }
+        if let Some(request) = waiting.take() {
+            let result = engine.complete_at(&request.line, &request.cwd, request.remote);
+            if events
+                .send(Event::Completed {
+                    version: request.version,
+                    result,
+                })
+                .is_err()
+            {
+                return;
+            }
+        }
+        // Whatever arrived during the fetch is newer than it.
+        waiting = match inbox.try_recv() {
+            Ok(newer) => newer,
+            Err(mpsc::TryRecvError::Empty) => match inbox.recv() {
+                Ok(newer) => newer,
+                Err(_) => return,
+            },
+            Err(mpsc::TryRecvError::Disconnected) => return,
+        };
+    }
+}
+
 enum Event {
     Input(Vec<u8>),
     Output(Vec<u8>),
@@ -792,33 +833,36 @@ pub fn run(shell: Shell, login: bool, notice: Option<&str>) -> Result<i32, Strin
     std::thread::spawn(move || {
         let engine = Arc::new(Engine::system(shell));
         let _ = engine_ready.send(engine.clone());
+        // Fetches from the network happen on a thread of their own, so the
+        // suggestions known on this machine keep up with typing while one
+        // is under way.
+        let (fetches, fetch_inbox) = mpsc::channel::<Option<CompletionRequest>>();
+        let fetch_engine = engine.clone();
+        let fetch_tx = tx.clone();
+        std::thread::spawn(move || fetch_worker(&fetch_engine, &fetch_inbox, &fetch_tx));
         let mut next = pending.recv().ok();
         while let Some(mut request) = next.take() {
             // Only the newest request matters.
             while let Ok(newer) = pending.try_recv() {
                 request = newer;
             }
-            let version = request.version;
             // What is known on this machine is shown at once. Anything a
             // spec fetches from the network follows when it arrives.
             let result = engine.complete_quick(&request.line, &request.cwd, request.remote);
             let loading = result.as_ref().is_some_and(|completion| completion.loading);
-            if tx.send(Event::Completed { version, result }).is_err() {
+            if tx
+                .send(Event::Completed {
+                    version: request.version,
+                    result,
+                })
+                .is_err()
+            {
                 break;
             }
-            if loading {
-                match pending.recv_timeout(FETCH_DELAY) {
-                    Ok(newer) => {
-                        next = Some(newer);
-                        continue;
-                    }
-                    Err(mpsc::RecvTimeoutError::Disconnected) => break,
-                    Err(mpsc::RecvTimeoutError::Timeout) => {}
-                }
-                let result = engine.complete_at(&request.line, &request.cwd, request.remote);
-                if tx.send(Event::Completed { version, result }).is_err() {
-                    break;
-                }
+            // Every request reaches the fetch thread, so one that needs no
+            // fetch also calls off a fetch still waiting to start.
+            if fetches.send(loading.then_some(request)).is_err() {
+                break;
             }
             next = pending.recv().ok();
         }

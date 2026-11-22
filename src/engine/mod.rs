@@ -1208,6 +1208,67 @@ mod tests {
         assert_eq!(filtered[0], "develop");
     }
 
+    /// Answers like [`FakeRunner`], but takes its time over fetches.
+    struct SlowNetwork(FakeRunner, std::time::Duration);
+
+    impl Runner for SlowNetwork {
+        fn run(&self, argv: &[String], cwd: &Path) -> Option<String> {
+            if argv.first().is_some_and(|program| program == "curl") {
+                std::thread::sleep(self.1);
+            }
+            self.0.run(argv, cwd)
+        }
+    }
+
+    #[test]
+    fn a_slow_fetch_does_not_hold_up_quick_suggestions() {
+        use std::time::{Duration, Instant};
+        let fetch = Duration::from_millis(1500);
+        let runner = SlowNetwork(
+            FakeRunner(vec![(
+                "curl",
+                r#"[{"package":{"name":"react","description":"UI library"}}]"#,
+            )]),
+            fetch,
+        );
+        let engine = std::sync::Arc::new(Engine::new(
+            Shell::Zsh,
+            History::default(),
+            Generators::new(Box::new(runner)),
+        ));
+        engine.set_options(Options {
+            online: true,
+            ..Options::default()
+        });
+        let cwd = std::env::temp_dir();
+        // Load the spec code first, so the timings below measure waiting only.
+        engine.complete_quick("npm install re", &cwd, false);
+
+        let started = Instant::now();
+        let background = {
+            let engine = engine.clone();
+            let cwd = cwd.clone();
+            std::thread::spawn(move || engine.complete_at("npm install rea", &cwd, false))
+        };
+        std::thread::sleep(Duration::from_millis(100));
+        // While the fetch is under way, both a request that defers the fetch
+        // and one that needs no network at all answer at once.
+        let quick_started = Instant::now();
+        let quick = engine.complete_quick("npm install reac", &cwd, false).unwrap();
+        let local = engine.complete_quick("git ch", &cwd, false).unwrap();
+        let waited = quick_started.elapsed();
+        assert!(quick.loading);
+        assert!(local.items.iter().any(|c| c.name == "checkout"), "{:?}", local.items);
+        assert!(
+            waited < Duration::from_millis(700),
+            "quick suggestions waited {waited:?} for the fetch"
+        );
+
+        let full = background.join().unwrap().unwrap();
+        assert!(started.elapsed() >= fetch);
+        assert_eq!(full.items[0].name, "react", "{:?}", full.items);
+    }
+
     #[test]
     fn fetched_suggestions_arrive_in_a_second_pass() {
         let engine = engine(&[]);

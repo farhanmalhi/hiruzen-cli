@@ -178,34 +178,51 @@ fn execute(runtime: &mut Runtime, job: &Job) -> Option<Output> {
     serde_json::from_str::<Option<Output>>(&json).ok()?
 }
 
-/// The engine runs on one thread of its own for the life of the process.
+/// Which engine thread runs a generator.
+///
+/// A generator that fetches from the network holds its engine for as long as
+/// the fetch takes. Fetches run on an engine of their own, so suggestions that
+/// need no network never wait behind one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Lane {
+    /// Suggestions shown as the user types.
+    Foreground,
+    /// Suggestions that may wait on the network.
+    Background,
+}
+
+/// Each lane's engine runs on one thread of its own for the life of the process.
 ///
 /// It needs a far deeper stack than a normal thread has, because parsing a
 /// large spec module recurses deeply. Keeping it on one thread also means
-/// each module is evaluated once, and the engine is never torn down (its
-/// garbage collector does not survive being dropped at thread exit).
-fn engine_thread() -> Option<&'static Mutex<mpsc::Sender<Job>>> {
-    static ENGINE: OnceLock<Option<Mutex<mpsc::Sender<Job>>>> = OnceLock::new();
-    ENGINE
-        .get_or_init(|| {
-            let (jobs, inbox) = mpsc::channel::<Job>();
-            std::thread::Builder::new()
-                .name("hiruzen-js".to_string())
-                .stack_size(ENGINE_STACK)
-                .spawn(move || {
-                    let mut runtime: Option<Runtime> = None;
-                    for job in inbox {
-                        if runtime.is_none() {
-                            runtime = new_runtime();
-                        }
-                        let output = runtime.as_mut().and_then(|runtime| execute(runtime, &job));
-                        let _ = job.reply.send(output);
+/// each module is evaluated once per lane, and the engine is never torn down
+/// (its garbage collector does not survive being dropped at thread exit).
+fn engine_thread(lane: Lane) -> Option<&'static Mutex<mpsc::Sender<Job>>> {
+    static FOREGROUND: OnceLock<Option<Mutex<mpsc::Sender<Job>>>> = OnceLock::new();
+    static BACKGROUND: OnceLock<Option<Mutex<mpsc::Sender<Job>>>> = OnceLock::new();
+    let (slot, name) = match lane {
+        Lane::Foreground => (&FOREGROUND, "hiruzen-js"),
+        Lane::Background => (&BACKGROUND, "hiruzen-js-fetch"),
+    };
+    slot.get_or_init(|| {
+        let (jobs, inbox) = mpsc::channel::<Job>();
+        std::thread::Builder::new()
+            .name(name.to_string())
+            .stack_size(ENGINE_STACK)
+            .spawn(move || {
+                let mut runtime: Option<Runtime> = None;
+                for job in inbox {
+                    if runtime.is_none() {
+                        runtime = new_runtime();
                     }
-                })
-                .ok()
-                .map(|_| Mutex::new(jobs))
-        })
-        .as_ref()
+                    let output = runtime.as_mut().and_then(|runtime| execute(runtime, &job));
+                    let _ = job.reply.send(output);
+                }
+            })
+            .ok()
+            .map(|_| Mutex::new(jobs))
+    })
+    .as_ref()
 }
 
 /// Runs the generator at `path` inside the spec `key`.
@@ -214,6 +231,21 @@ fn engine_thread() -> Option<&'static Mutex<mpsc::Sender<Job>>> {
 /// Returns `None` when the module or generator cannot be run, which callers
 /// treat as "no dynamic suggestions" and not as an error to show.
 pub fn run(
+    key: &str,
+    module: Module<'_>,
+    path: &serde_json::Value,
+    tokens: &[String],
+    cwd: &str,
+    env: &HashMap<String, String>,
+    exec: Exec<'_>,
+) -> Option<Output> {
+    run_in(Lane::Foreground, key, module, path, tokens, cwd, env, exec)
+}
+
+/// As [`run`], on the engine of the given lane.
+#[allow(clippy::too_many_arguments)]
+pub fn run_in(
+    lane: Lane,
     key: &str,
     module: Module<'_>,
     path: &serde_json::Value,
@@ -238,7 +270,7 @@ pub fn run(
         exec: unsafe { std::mem::transmute::<ExecPtr<'_>, ExecPtr<'static>>(exec) },
         reply,
     };
-    engine_thread()?.lock().ok()?.send(job).ok()?;
+    engine_thread(lane)?.lock().ok()?.send(job).ok()?;
     // An error here means the engine thread died; there is nothing to suggest.
     result.recv().ok()?
 }

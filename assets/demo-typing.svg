@@ -1,0 +1,165 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="847" height="208" viewBox="0 0 847 208" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14" role="img" aria-label="Typing git push origin main with hiruzen: a dropdown suggests each next word, and Tab accepts it, ending with the current branch">
+<style>
+.f{opacity:0;animation-duration:8300ms;animation-iteration-count:infinite;animation-timing-function:step-end}
+@keyframes k0{0%{opacity:1}8.434%{opacity:0}100%{opacity:0}}
+.f0{animation-name:k0}
+@keyframes k1{0%{opacity:0}8.434%{opacity:1}11.325%{opacity:0}100%{opacity:0}}
+.f1{animation-name:k1}
+@keyframes k2{0%{opacity:0}11.325%{opacity:1}17.349%{opacity:0}100%{opacity:0}}
+.f2{animation-name:k2}
+@keyframes k3{0%{opacity:0}17.349%{opacity:1}28.193%{opacity:0}100%{opacity:0}}
+.f3{animation-name:k3}
+@keyframes k4{0%{opacity:0}28.193%{opacity:1}30.120%{opacity:0}100%{opacity:0}}
+.f4{animation-name:k4}
+@keyframes k5{0%{opacity:0}30.120%{opacity:1}43.373%{opacity:0}100%{opacity:0}}
+.f5{animation-name:k5}
+@keyframes k6{0%{opacity:0}43.373%{opacity:1}55.422%{opacity:0}100%{opacity:0}}
+.f6{animation-name:k6}
+@keyframes k7{0%{opacity:0}55.422%{opacity:1}73.494%{opacity:0}100%{opacity:0}}
+.f7{animation-name:k7}
+@keyframes k8{0%{opacity:0}73.494%{opacity:1}100.000%{opacity:0}100%{opacity:0}}
+.f8{animation-name:k8}
+@media (prefers-reduced-motion:reduce){.f{animation:none}.f7{opacity:1}}
+</style>
+<rect width="100%" height="100%" rx="10" fill="#1e1e1e"/>
+<circle cx="22" cy="20" r="6" fill="#ff5f56"/><circle cx="42" cy="20" r="6" fill="#ffbd2e"/><circle cx="62" cy="20" r="6" fill="#27c93f"/>
+<text x="16.0" y="58" fill="#5fafff" font-weight="bold" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">my-project </text>
+<text x="108.4" y="58" fill="#87d787" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(main) </text>
+<text x="167.2" y="58" fill="#d4d4d4" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">% </text>
+<g class="f f0">
+<text x="184.0" y="58" fill="#d4d4d4" xml:space="preserve"></text>
+<rect x="184.0" y="44" width="8.4" height="18" fill="#d4d4d4"/>
+</g>
+<g class="f f1">
+<text x="184.0" y="58" fill="#d4d4d4" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">gi</text>
+<rect x="200.8" y="44" width="8.4" height="18" fill="#d4d4d4"/>
+<rect x="184.0" y="64" width="512.4" height="20" fill="#005faf"/>
+<text x="184.0" y="78" fill="#afffff" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">&gt;</text>
+<text x="200.8" y="78" fill="#ffffff" font-weight="bold" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">git ⇥</text>
+<text x="368.8" y="78" fill="#dadada" textLength="218.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">The stupid content tracker</text>
+<rect x="184.0" y="84" width="512.4" height="20" fill="#303030"/>
+<text x="184.0" y="98" fill="#5fafff" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">&gt;</text>
+<text x="200.8" y="98" fill="#d0d0d0" textLength="109.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">git-cvsserver</text>
+<text x="368.8" y="98" fill="#8a8a8a" xml:space="preserve"></text>
+<rect x="184.0" y="104" width="512.4" height="20" fill="#303030"/>
+<text x="184.0" y="118" fill="#5fafff" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">&gt;</text>
+<text x="200.8" y="118" fill="#d0d0d0" textLength="134.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">git-receive-pack</text>
+<text x="368.8" y="118" fill="#8a8a8a" xml:space="preserve"></text>
+<rect x="184.0" y="124" width="512.4" height="20" fill="#303030"/>
+<text x="184.0" y="138" fill="#5fafff" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">&gt;</text>
+<text x="200.8" y="138" fill="#d0d0d0" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">git-shell</text>
+<text x="368.8" y="138" fill="#8a8a8a" xml:space="preserve"></text>
+<rect x="184.0" y="144" width="512.4" height="20" fill="#303030"/>
+<text x="184.0" y="158" fill="#5fafff" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">&gt;</text>
+<text x="200.8" y="158" fill="#d0d0d0" textLength="151.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">git-upload-archive</text>
+<text x="368.8" y="158" fill="#8a8a8a" xml:space="preserve"></text>
+<rect x="184.0" y="164" width="512.4" height="20" fill="#303030"/>
+<text x="184.0" y="178" fill="#5fafff" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">&gt;</text>
+<text x="200.8" y="178" fill="#d0d0d0" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">git-upload-pack</text>
+<text x="368.8" y="178" fill="#8a8a8a" xml:space="preserve"></text>
+</g>
+<g class="f f2">
+<text x="184.0" y="58" fill="#d4d4d4" textLength="25.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">git</text>
+<rect x="209.2" y="44" width="8.4" height="18" fill="#d4d4d4"/>
+<rect x="184.0" y="64" width="512.4" height="20" fill="#005faf"/>
+<text x="184.0" y="78" fill="#afffff" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">&gt;</text>
+<text x="200.8" y="78" fill="#ffffff" font-weight="bold" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">git ⇥</text>
+<text x="368.8" y="78" fill="#dadada" textLength="218.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">The stupid content tracker</text>
+<rect x="184.0" y="84" width="512.4" height="20" fill="#303030"/>
+<text x="184.0" y="98" fill="#5fafff" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">&gt;</text>
+<text x="200.8" y="98" fill="#d0d0d0" textLength="109.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">git-cvsserver</text>
+<text x="368.8" y="98" fill="#8a8a8a" xml:space="preserve"></text>
+<rect x="184.0" y="104" width="512.4" height="20" fill="#303030"/>
+<text x="184.0" y="118" fill="#5fafff" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">&gt;</text>
+<text x="200.8" y="118" fill="#d0d0d0" textLength="134.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">git-receive-pack</text>
+<text x="368.8" y="118" fill="#8a8a8a" xml:space="preserve"></text>
+<rect x="184.0" y="124" width="512.4" height="20" fill="#303030"/>
+<text x="184.0" y="138" fill="#5fafff" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">&gt;</text>
+<text x="200.8" y="138" fill="#d0d0d0" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">git-shell</text>
+<text x="368.8" y="138" fill="#8a8a8a" xml:space="preserve"></text>
+<rect x="184.0" y="144" width="512.4" height="20" fill="#303030"/>
+<text x="184.0" y="158" fill="#5fafff" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">&gt;</text>
+<text x="200.8" y="158" fill="#d0d0d0" textLength="151.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">git-upload-archive</text>
+<text x="368.8" y="158" fill="#8a8a8a" xml:space="preserve"></text>
+<rect x="184.0" y="164" width="512.4" height="20" fill="#303030"/>
+<text x="184.0" y="178" fill="#5fafff" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">&gt;</text>
+<text x="200.8" y="178" fill="#d0d0d0" textLength="126.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">git-upload-pack</text>
+<text x="368.8" y="178" fill="#8a8a8a" xml:space="preserve"></text>
+</g>
+<g class="f f3">
+<text x="184.0" y="58" fill="#d4d4d4" textLength="33.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">git </text>
+<rect x="217.6" y="44" width="8.4" height="18" fill="#d4d4d4"/>
+<rect x="217.6" y="64" width="512.4" height="20" fill="#005faf"/>
+<text x="217.6" y="78" fill="#afffff" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">&gt;</text>
+<text x="234.4" y="78" fill="#ffffff" font-weight="bold" textLength="142.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">commit -m &#x27;msg&#x27; ⇥</text>
+<text x="402.4" y="78" fill="#dadada" textLength="159.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Git commit shortcut</text>
+<rect x="217.6" y="84" width="512.4" height="20" fill="#303030"/>
+<text x="217.6" y="98" fill="#5fafff" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">&gt;</text>
+<text x="234.4" y="98" fill="#d0d0d0" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">archive</text>
+<text x="402.4" y="98" fill="#8a8a8a" textLength="319.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Create an archive of files from a nam…</text>
+<rect x="217.6" y="104" width="512.4" height="20" fill="#303030"/>
+<text x="217.6" y="118" fill="#5fafff" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">&gt;</text>
+<text x="234.4" y="118" fill="#d0d0d0" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">blame</text>
+<text x="402.4" y="118" fill="#8a8a8a" xml:space="preserve"></text>
+<rect x="217.6" y="124" width="512.4" height="20" fill="#303030"/>
+<text x="217.6" y="138" fill="#5fafff" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">&gt;</text>
+<text x="234.4" y="138" fill="#d0d0d0" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">commit</text>
+<text x="402.4" y="138" fill="#8a8a8a" textLength="268.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Record changes to the repository</text>
+<rect x="217.6" y="144" width="512.4" height="20" fill="#303030"/>
+<text x="217.6" y="158" fill="#5fafff" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">&gt;</text>
+<text x="234.4" y="158" fill="#d0d0d0" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">config</text>
+<text x="402.4" y="158" fill="#8a8a8a" textLength="201.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Change Git configuration</text>
+<rect x="217.6" y="164" width="512.4" height="20" fill="#303030"/>
+<text x="217.6" y="178" fill="#5fafff" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">&gt;</text>
+<text x="234.4" y="178" fill="#d0d0d0" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">rebase</text>
+<text x="402.4" y="178" fill="#8a8a8a" textLength="319.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Reapply commits on top of another bas…</text>
+</g>
+<g class="f f4">
+<text x="184.0" y="58" fill="#d4d4d4" textLength="42.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">git p</text>
+<rect x="226.0" y="44" width="8.4" height="18" fill="#d4d4d4"/>
+<rect x="217.6" y="64" width="512.4" height="20" fill="#005faf"/>
+<text x="217.6" y="78" fill="#afffff" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">&gt;</text>
+<text x="234.4" y="78" fill="#ffffff" font-weight="bold" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">push ⇥</text>
+<text x="402.4" y="78" fill="#dadada" textLength="151.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Update remote refs</text>
+<rect x="217.6" y="84" width="512.4" height="20" fill="#303030"/>
+<text x="217.6" y="98" fill="#5fafff" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">&gt;</text>
+<text x="234.4" y="98" fill="#d0d0d0" textLength="33.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">pull</text>
+<text x="402.4" y="98" fill="#8a8a8a" textLength="277.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Integrate with another repository</text>
+</g>
+<g class="f f5">
+<text x="184.0" y="58" fill="#d4d4d4" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">git pu</text>
+<rect x="234.4" y="44" width="8.4" height="18" fill="#d4d4d4"/>
+<rect x="217.6" y="64" width="512.4" height="20" fill="#005faf"/>
+<text x="217.6" y="78" fill="#afffff" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">&gt;</text>
+<text x="234.4" y="78" fill="#ffffff" font-weight="bold" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">push ⇥</text>
+<text x="402.4" y="78" fill="#dadada" textLength="151.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Update remote refs</text>
+<rect x="217.6" y="84" width="512.4" height="20" fill="#303030"/>
+<text x="217.6" y="98" fill="#5fafff" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">&gt;</text>
+<text x="234.4" y="98" fill="#d0d0d0" textLength="33.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">pull</text>
+<text x="402.4" y="98" fill="#8a8a8a" textLength="277.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Integrate with another repository</text>
+</g>
+<g class="f f6">
+<text x="184.0" y="58" fill="#d4d4d4" textLength="75.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">git push </text>
+<rect x="259.6" y="44" width="8.4" height="18" fill="#d4d4d4"/>
+<rect x="259.6" y="64" width="512.4" height="20" fill="#005faf"/>
+<text x="259.6" y="78" fill="#afffff" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">&gt;</text>
+<text x="276.4" y="78" fill="#ffffff" font-weight="bold" textLength="67.2" lengthAdjust="spacingAndGlyphs" xml:space="preserve">origin ⇥</text>
+<text x="444.4" y="78" fill="#dadada" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Remote</text>
+</g>
+<g class="f f7">
+<text x="184.0" y="58" fill="#d4d4d4" textLength="134.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">git push origin </text>
+<rect x="318.4" y="44" width="8.4" height="18" fill="#d4d4d4"/>
+<rect x="318.4" y="64" width="512.4" height="20" fill="#005faf"/>
+<text x="318.4" y="78" fill="#afffff" textLength="8.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">&gt;</text>
+<text x="335.2" y="78" fill="#ffffff" font-weight="bold" textLength="50.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">main ⇥</text>
+<text x="503.2" y="78" fill="#dadada" textLength="117.6" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Current branch</text>
+</g>
+<g class="f f8">
+<text x="184.0" y="58" fill="#d4d4d4" textLength="168.0" lengthAdjust="spacingAndGlyphs" xml:space="preserve">git push origin main</text>
+<text x="16.0" y="78" fill="#d4d4d4" textLength="176.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">Everything up-to-date</text>
+<text x="16.0" y="98" fill="#5fafff" font-weight="bold" textLength="92.4" lengthAdjust="spacingAndGlyphs" xml:space="preserve">my-project </text>
+<text x="108.4" y="98" fill="#87d787" textLength="58.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">(main) </text>
+<text x="167.2" y="98" fill="#d4d4d4" textLength="16.8" lengthAdjust="spacingAndGlyphs" xml:space="preserve">% </text>
+<rect x="184.0" y="84" width="8.4" height="18" fill="#d4d4d4"/>
+</g>
+</svg>

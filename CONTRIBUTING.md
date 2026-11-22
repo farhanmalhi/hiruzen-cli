@@ -84,6 +84,10 @@ generated from them (run `dist generate` after changing the settings).
 2. Move the entries under `Unreleased` in `CHANGELOG.md` to a new
    `## [x.y.z] - date` heading. That section becomes the release notes.
 3. Commit, then tag and push: `git tag v0.2.0 && git push origin main v0.2.0`.
+4. Publish to crates.io: `cargo publish`. This needs a crates.io token
+   (`cargo login`). The package carries `specs/specs.bin`, so it is about
+   8 MiB of the 10 MiB crates.io allows; `cargo package --list` shows what
+   goes in.
 
 The tag starts the release workflow. It builds every target, creates the
 GitHub Release with the archives, checksums and installer scripts, and pushes
@@ -92,6 +96,16 @@ the Homebrew formula to `farhanmalhi/homebrew-tap`. The tag must match the `vers
 suffix, such as `0.2.0-rc.1` tagged `v0.2.0-rc.1`, makes a prerelease and
 leaves the tap alone, which is the way to try the workflow out; it takes its
 release notes from the `0.2.0` section of the changelog.
+
+When the release workflow succeeds, the Scoop workflow
+(`.github/workflows/scoop.yml`) points `bucket/hiruzen.json` at the new
+release and commits it to `main`, so pull before your next change. It can
+also be run by hand from the Actions tab.
+
+The website, <https://hiruzen.farhanmalhi.com/>, is kept in a separate
+repository. When a release changes behaviour the site describes (keys,
+settings, what is sent over the network, supported shells), update the site
+in the same week.
 
 ## License
 

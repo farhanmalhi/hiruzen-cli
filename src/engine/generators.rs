@@ -509,7 +509,15 @@ impl Generators {
                 request.cwd.to_string_lossy().into_owned(),
             )))
             .collect();
-        js::run(
+        // A request that may fetch runs on its own engine, so one waiting on
+        // the network does not hold up the suggestions shown while typing.
+        let lane = if request.network.defer {
+            js::Lane::Foreground
+        } else {
+            js::Lane::Background
+        };
+        js::run_in(
+            lane,
             request.spec_key,
             &|| specs.module(request.spec_key),
             path,

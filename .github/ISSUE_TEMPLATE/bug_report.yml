@@ -63,6 +63,12 @@ body:
     validations:
       required: true
   - type: textarea
+    id: doctor
+    attributes:
+      label: hiruzen doctor
+      description: Output of `hiruzen doctor`, which checks the setup. If hiruzen stopped itself after a failure, also paste the end of `crash.log`, which is in the same folder as the settings file `hiruzen doctor` lists.
+      render: text
+  - type: textarea
     id: extra
     attributes:
       label: Anything else

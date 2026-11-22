@@ -1,0 +1,49 @@
+# Points the Scoop manifest (bucket/hiruzen.json) at the newest release once
+# the Release workflow has published it, so `scoop update hiruzen` finds it.
+name: Scoop
+
+on:
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+
+      - name: Update the manifest to the latest release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          tag=$(gh release view --repo "$GITHUB_REPOSITORY" --json tagName --jq .tagName)
+          version=${tag#v}
+          asset=hiruzen-cli-x86_64-pc-windows-msvc.zip
+          url="https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/$asset"
+          hash=$(curl -fsSL "$url.sha256" | cut -d' ' -f1)
+          case "$hash" in
+            *[!0-9a-f]* | "") echo "no checksum found at $url.sha256"; exit 1 ;;
+          esac
+          jq --arg v "$version" --arg u "$url" --arg h "$hash" \
+            '.version = $v | .architecture."64bit".url = $u | .architecture."64bit".hash = $h' \
+            bucket/hiruzen.json > bucket/hiruzen.json.new
+          mv bucket/hiruzen.json.new bucket/hiruzen.json
+          # jq writes two-space indentation; keep the file as it was written.
+          python3 -c 'import json; p="bucket/hiruzen.json"; d=json.load(open(p)); open(p,"w").write(json.dumps(d, indent=4) + "\n")'
+          if git diff --quiet; then
+            echo "bucket/hiruzen.json already points at $tag"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "chore: scoop manifest for $tag"
+          git push

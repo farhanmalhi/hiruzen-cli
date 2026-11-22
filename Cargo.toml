@@ -9,7 +9,7 @@ repository = "https://github.com/farhanmalhi/hiruzen-cli"
 homepage = "https://hiruzen.farhanmalhi.com/"
 keywords = ["autocomplete", "terminal", "shell", "cli", "completion"]
 categories = ["command-line-utilities"]
-exclude = ["tools/", ".github/", "claude-plugin/", ".claude-plugin/", "tests/edge/", "docs/", "assets/"]
+exclude = ["tools/", ".github/", "claude-plugin/", ".claude-plugin/", "tests/edge/", "docs/", "assets/", "dist-workspace.toml", "package-lock.json"]
 
 [[bin]]
 name = "hiruzen"

@@ -6,6 +6,24 @@ All notable changes to hiruzen are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Scoop.** On Windows, `scoop bucket add hiruzen
+  https://github.com/farhanmalhi/hiruzen-cli` then `scoop install hiruzen`.
+  The manifest follows each release by itself.
+- **crates.io.** `cargo install --locked hiruzen-cli` installs from crates.io.
+- The README opens with an animation of typing with hiruzen, drawn from what
+  `hiruzen complete` prints (`tools/demo/animate.py`).
+- `tools/downloads.sh` counts how often each release was downloaded.
+
+### Fixed
+
+- **A slow network fetch no longer holds up the dropdown.** Suggestions that
+  come from the network (such as package names from a registry) are fetched
+  on a thread of their own, with their own engine for spec code. While one
+  is under way, the suggestions known on your machine keep following what you
+  type, where before they waited for the fetch to finish (up to 3 seconds).
+
 ## [0.2.0] - 2026-11-21
 
 ### Added

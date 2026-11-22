@@ -5,12 +5,13 @@
 [![Downloads](https://img.shields.io/github/downloads/farhanmalhi/hiruzen-cli/total)](https://github.com/farhanmalhi/hiruzen-cli/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Dropdown autocomplete for your terminal. The command it installs is `hiruzen`.
-As you type a command, hiruzen shows
-what the next word can be (subcommands, options, branches, files, scripts),
-so you do not have to remember it.
+Your terminal assistant. As you type a command, hiruzen shows a dropdown of
+what the next word can be (subcommands, options, branches, files, scripts)
+and learns which ones you use, so the right one is usually first. You stay in
+control: it suggests, you pick, and nothing runs until you press Enter. The
+command it installs is `hiruzen`.
 
-![The hiruzen dropdown listing git subcommands that match "ch", with a description beside each](assets/demo.svg)
+![Typing git push origin main with hiruzen: a dropdown suggests each next word, Tab accepts it, and the current branch is offered first](assets/demo-typing.svg)
 
 It is a single Rust binary with the completion specs embedded, so there is
 nothing else to install. The only network requests are the registry searches
@@ -57,6 +58,13 @@ and Windows (x64).
 brew install farhanmalhi/tap/hiruzen
 ```
 
+**Windows, with Scoop:**
+
+```powershell
+scoop bucket add hiruzen https://github.com/farhanmalhi/hiruzen-cli
+scoop install hiruzen
+```
+
 **Linux and macOS, without Homebrew:**
 
 ```sh
@@ -75,12 +83,14 @@ against its SHA-256 checksum, put it in `~/.local/bin` (on Windows,
 new terminal afterwards. You can also download an archive from the release
 page and put `hiruzen` on your `PATH` yourself.
 
-**From source.** You need a [Rust toolchain](https://rustup.rs), version 1.91
-or newer. From a clone of this repository:
+**With Cargo.** You need a [Rust toolchain](https://rustup.rs), version 1.91
+or newer:
 
 ```sh
-cargo install --locked --path .
+cargo install --locked hiruzen-cli
 ```
+
+Or, from a clone of this repository, `cargo install --locked --path .`.
 
 This puts `hiruzen` in `~/.cargo/bin`, which must be on your `PATH`.
 

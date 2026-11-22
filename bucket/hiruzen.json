@@ -1,0 +1,25 @@
+{
+    "version": "0.2.0",
+    "description": "Dropdown suggestions for your terminal: suggests the next word as you type, and learns how you work.",
+    "homepage": "https://hiruzen.farhanmalhi.com/",
+    "license": "MIT",
+    "architecture": {
+        "64bit": {
+            "url": "https://github.com/farhanmalhi/hiruzen-cli/releases/download/v0.2.0/hiruzen-cli-x86_64-pc-windows-msvc.zip",
+            "hash": "a954321a90a24cad254c6b15a8fd55eeb741838711d6ad25b741f78d2175af24"
+        }
+    },
+    "bin": "hiruzen.exe",
+    "notes": "Run 'hiruzen install' to start hiruzen with every new PowerShell, then open a new terminal.",
+    "checkver": "github",
+    "autoupdate": {
+        "architecture": {
+            "64bit": {
+                "url": "https://github.com/farhanmalhi/hiruzen-cli/releases/download/v$version/hiruzen-cli-x86_64-pc-windows-msvc.zip",
+                "hash": {
+                    "url": "$url.sha256"
+                }
+            }
+        }
+    }
+}
