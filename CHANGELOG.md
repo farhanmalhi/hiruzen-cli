@@ -6,6 +6,8 @@ All notable changes to hiruzen are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-11-22
+
 ### Added
 
 - **Scoop.** On Windows, `scoop bucket add hiruzen
@@ -15,6 +17,11 @@ All notable changes to hiruzen are recorded here. The format follows
 - The README opens with an animation of typing with hiruzen, drawn from what
   `hiruzen complete` prints (`tools/demo/animate.py`).
 - `tools/downloads.sh` counts how often each release was downloaded.
+- The bug report form asks for the output of `hiruzen doctor`.
+
+### Changed
+
+- The crates.io description now reads "Your terminal assistant".
 
 ### Fixed
 
@@ -199,6 +206,7 @@ command can be, as you type it.
   suggestions for them come from your history and the current directory.
 - Nushell, Xonsh and other shells not listed above are not supported.
 
-[Unreleased]: https://github.com/farhanmalhi/hiruzen-cli/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/farhanmalhi/hiruzen-cli/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/farhanmalhi/hiruzen-cli/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/farhanmalhi/hiruzen-cli/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/farhanmalhi/hiruzen-cli/releases/tag/v0.1.0

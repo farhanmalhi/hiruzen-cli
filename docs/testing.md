@@ -19,7 +19,8 @@ starts, hostile input and more, in bash, zsh, fish and PowerShell.
 | After fixes | 70 of 71 | The bash-then-PowerShell case, whose fix was made after this run started |
 | After that fix | 71 of 71 | Nothing |
 | With six cases added for 0.2.0 | 75 of 77 | `hiruzen learn` nested a tool's commands inside each other when the tool printed the same help for every subcommand (fixed); the test for learning from picks chose by position, which the learning itself changes |
-| Before the 0.2.0 release | 76 of 77, and the last case on its own | Nothing in hiruzen. The picks test was corrected to choose by name and passes when run by itself; the full suite has not yet been re-run with it |
+| Before the 0.2.0 release | 76 of 77, and the last case on its own | Nothing in hiruzen. The picks test was corrected to choose by name and passes when run by itself |
+| Before the 0.2.1 release, with network fetches on their own thread | 77 of 77 | Nothing |
 
 The last case to be fixed came from hiruzen re-reading a command typed in bash by
 PowerShell's rules, where a backslash is an ordinary character. The record

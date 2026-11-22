@@ -1,9 +1,9 @@
 [package]
 name = "hiruzen-cli"
-version = "0.2.0"
+version = "0.2.1"
 edition = "2021"
 rust-version = "1.91"
-description = "Dropdown autocomplete for your terminal: suggests the next word as you type, on Windows, Linux and macOS"
+description = "Your terminal assistant: suggests the next word as you type and learns how you work, on Windows, Linux and macOS"
 license = "MIT"
 repository = "https://github.com/farhanmalhi/hiruzen-cli"
 homepage = "https://hiruzen.farhanmalhi.com/"
