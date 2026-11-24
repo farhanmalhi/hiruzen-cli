@@ -20,7 +20,7 @@ use crate::settings::{self, Bindings, Settings};
 use crate::shell::Shell;
 use crate::term::marks::{Chunk, Mark, Scanner};
 use crate::term::popup::{self, Request, Style};
-use crate::term::screen::{Anchor, Screen};
+use crate::term::screen::{clears_screen, Anchor, Screen};
 use crate::term::stream::Stream;
 
 /// How often the terminal size is checked for a change.
@@ -74,8 +74,67 @@ enum Event {
     Input(Vec<u8>),
     Output(Vec<u8>),
     Resize(u16, u16),
-    Completed { version: u64, result: Option<Completion> },
+    Completed {
+        version: u64,
+        result: Option<Completion>,
+    },
     Exit(i32),
+    /// A command to run straight on the real terminal, and where to send
+    /// its exit status.
+    #[cfg(unix)]
+    Direct(crate::direct::Request, std::os::unix::net::UnixStream),
+}
+
+/// Lets the main thread take the keyboard away from the thread that reads
+/// it, while a command runs straight on the terminal or the terminal is
+/// asked where the cursor is.
+#[cfg(unix)]
+#[derive(Default)]
+struct InputGate {
+    paused: std::sync::atomic::AtomicBool,
+    /// The reader has seen the pause and is no longer reading.
+    idle: std::sync::atomic::AtomicBool,
+}
+
+#[cfg(unix)]
+impl InputGate {
+    fn pause(&self) {
+        use std::sync::atomic::Ordering::SeqCst;
+        self.paused.store(true, SeqCst);
+        let deadline = std::time::Instant::now() + Duration::from_secs(1);
+        while !self.idle.load(SeqCst) && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(2));
+        }
+    }
+
+    fn resume(&self) {
+        use std::sync::atomic::Ordering::SeqCst;
+        self.idle.store(false, SeqCst);
+        self.paused.store(false, SeqCst);
+    }
+
+    /// Reads keys until the terminal goes away, holding off while paused.
+    fn read_keys(&self, tx: &Sender<Event>) {
+        use std::sync::atomic::Ordering::SeqCst;
+        let mut buf = [0u8; 16 * 1024];
+        loop {
+            if self.paused.load(SeqCst) {
+                self.idle.store(true, SeqCst);
+                std::thread::sleep(Duration::from_millis(5));
+                continue;
+            }
+            // A short wait, so a pause is noticed promptly.
+            match crate::term::foreground::read_input(&mut buf, Duration::from_millis(50)) {
+                Ok(Some(0)) | Err(_) => break,
+                Ok(Some(n)) => {
+                    if tx.send(Event::Input(buf[..n].to_vec())).is_err() {
+                        break;
+                    }
+                }
+                Ok(None) => {}
+            }
+        }
+    }
 }
 
 struct CompletionRequest {
@@ -131,12 +190,6 @@ fn install_crash_log() {
             let _ = writeln!(file, "hiruzen {}: {info}", env!("CARGO_PKG_VERSION"));
         }
     }));
-}
-
-/// True when shell output erases the whole screen.
-fn clears_screen(data: &[u8]) -> bool {
-    let has = |needle: &[u8]| data.windows(needle.len()).any(|window| window == needle);
-    has(b"\x1b[2J") || has(b"\x1b[3J") || has(b"\x1b[H\x1b[J")
 }
 
 /// The arrow keys shells use to walk their history.
@@ -309,6 +362,7 @@ impl Session {
             cursor_row: cursor_row.into(),
             command_row: command_row.into(),
             anchor_col: self.popup_col.into(),
+            min_top: self.screen.foreign_rows().into(),
             style: Style {
                 theme: self.settings.theme,
                 max_visible: self.settings.height,
@@ -358,6 +412,23 @@ impl Session {
         let rows_spanned = (usize::from(anchor.col) + typed) / usize::from(cols.max(1));
         let row = usize::from(cursor_row).saturating_sub(rows_spanned) as u16;
         self.anchor = Some(self.screen.anchor_at(row, anchor.col));
+    }
+
+    /// Starts the model afresh from the real terminal's cursor position,
+    /// leaving whatever is above it on screen. Without a position the screen
+    /// is cleared, so the model and the terminal still agree.
+    fn restart_screen(&mut self, at: Option<(u16, u16)>) {
+        let (cols, rows) = crossterm::terminal::size().unwrap_or_else(|_| self.screen.size());
+        self.screen = Screen::new(cols, rows);
+        self.drawn = None;
+        self.leave_prompt();
+        match at {
+            Some((row, col)) => {
+                let out = self.screen.start_at(row, col);
+                self.write_terminal(out);
+            }
+            None => self.write_terminal(b"\x1b[H\x1b[2J"),
+        }
     }
 
     /// Where the command starts when the shell has drawn its prompt again
@@ -680,15 +751,26 @@ impl Session {
         // Terminals re-wrap their contents on resize in ways the model does
         // not reproduce, so the real screen is redrawn from the model to
         // bring the two back in step.
+        let resize_pty = || {
+            let _ = master.resize(PtySize {
+                rows,
+                cols,
+                pixel_width: 0,
+                pixel_height: 0,
+            });
+        };
+        if self.screen.size() == (cols, rows) {
+            // The model already has this size: it was started afresh after
+            // the change, while a command ran straight on the terminal.
+            resize_pty();
+            return;
+        }
         self.drawn = None;
         self.screen.resize(cols, rows);
-        let _ = master.resize(PtySize {
-            rows,
-            cols,
-            pixel_width: 0,
-            pixel_height: 0,
-        });
+        resize_pty();
         if !self.screen.alternate() && self.stream.is_idle() {
+            // Text from before the session cannot be redrawn and is lost here.
+            self.screen.forget_foreign();
             let mut out = self.screen.repaint_all();
             self.sync_line();
             out.extend_from_slice(self.draw().as_bytes());
@@ -768,6 +850,14 @@ pub fn run(shell: Shell, login: bool, notice: Option<&str>) -> Result<i32, Strin
     let raw = RawMode::enable()?;
     let (events, inbox): (Sender<Event>, Receiver<Event>) = mpsc::channel();
 
+    // Where the cursor is, so the session can start below what is already on
+    // screen instead of clearing it. Asked before anything else reads the
+    // keyboard.
+    #[cfg(unix)]
+    let (start, typeahead) = crate::term::foreground::query_cursor(Duration::from_millis(500));
+    #[cfg(not(unix))]
+    let (start, typeahead): (Option<(u16, u16)>, Vec<u8>) = (None, Vec::new());
+
     // Shell output.
     let tx = events.clone();
     std::thread::spawn(move || {
@@ -785,7 +875,17 @@ pub fn run(shell: Shell, login: bool, notice: Option<&str>) -> Result<i32, Strin
     });
 
     // Keyboard input.
+    #[cfg(unix)]
+    let gate = Arc::new(InputGate::default());
+    #[cfg(unix)]
+    {
+        let tx = events.clone();
+        let gate = gate.clone();
+        std::thread::spawn(move || gate.read_keys(&tx));
+    }
+    #[cfg(not(unix))]
     let tx = events.clone();
+    #[cfg(not(unix))]
     std::thread::spawn(move || {
         let mut stdin = std::io::stdin().lock();
         let mut buf = [0u8; 4096];
@@ -800,6 +900,30 @@ pub fn run(shell: Shell, login: bool, notice: Option<&str>) -> Result<i32, Strin
             }
         }
     });
+
+    // Requests from `hiruzen direct`.
+    #[cfg(unix)]
+    if let Some(listener) = launch.direct_listener.as_ref().and_then(|l| l.try_clone().ok()) {
+        let tx = events.clone();
+        std::thread::spawn(move || {
+            use std::io::BufRead;
+            for stream in listener.incoming() {
+                let Ok(stream) = stream else { continue };
+                let Ok(reading) = stream.try_clone() else { continue };
+                let mut line = String::new();
+                let mut reader = std::io::BufReader::new(reading.take(16 * 1024 * 1024));
+                if reader.read_line(&mut line).is_err() {
+                    continue;
+                }
+                let Ok(request) = serde_json::from_str(&line) else {
+                    continue;
+                };
+                if tx.send(Event::Direct(request, stream)).is_err() {
+                    break;
+                }
+            }
+        });
+    }
 
     // Shell exit.
     let tx = events.clone();
@@ -901,17 +1025,16 @@ pub fn run(shell: Shell, login: bool, notice: Option<&str>) -> Result<i32, Strin
 
     session.apply_settings();
 
-    // Start from an empty screen so the model and the terminal agree.
-    session.write_terminal(b"\x1b[H\x1b[2J");
+    // Start below what is already on screen, leaving it readable.
+    session.restart_screen(start);
+    session.write_shell(&typeahead);
     if let Some(notice) = notice {
         let line = format!("{notice}\r\n");
         session.write_terminal(line.as_bytes());
         session.screen.feed(line.as_bytes());
     }
 
-    // If hiruzen's own code fails, the user must not lose their shell. Each
-    // event is handled under a guard; after a failure hiruzen stops drawing
-    // suggestions and only carries bytes between the terminal and the shell.
+    // Failures are contained by `dispatch` and reported to a file.
     install_crash_log();
     let mut handed_back = false;
     let code = loop {
@@ -931,39 +1054,24 @@ pub fn run(shell: Shell, login: bool, notice: Option<&str>) -> Result<i32, Strin
             }
             break code;
         }
-        if handed_back {
-            match event {
-                Event::Output(bytes) => session.write_terminal(&bytes),
-                Event::Input(bytes) => session.write_shell(&bytes),
-                Event::Resize(cols, rows) => {
-                    let _ = master.resize(PtySize {
-                        rows,
-                        cols,
-                        pixel_width: 0,
-                        pixel_height: 0,
-                    });
-                }
-                Event::Completed { .. } | Event::Exit(_) => {}
+        #[cfg(unix)]
+        if let Event::Direct(request, reply) = event {
+            let later = run_direct(
+                &mut session,
+                master.as_ref(),
+                &inbox,
+                &gate,
+                &mut handed_back,
+                request,
+                reply,
+            );
+            // What arrived meanwhile is handled in turn.
+            for event in later {
+                let _ = events.send(event);
             }
             continue;
         }
-        let survived = match &event {
-            Event::Output(bytes) => guarded(|| session.on_output(bytes)),
-            Event::Input(bytes) => guarded(|| session.on_input(bytes)),
-            Event::Completed { version, result } => guarded(|| session.on_completed(*version, result.clone())),
-            Event::Resize(cols, rows) => guarded(|| session.on_resize(*cols, *rows, master.as_ref())),
-            Event::Exit(_) => true,
-        };
-        if !survived {
-            handed_back = true;
-            // Whatever was being handled still has to reach its destination.
-            match event {
-                Event::Output(bytes) => session.write_terminal(&bytes),
-                Event::Input(bytes) => session.write_shell(&bytes),
-                _ => {}
-            }
-            session.write_terminal(b"\x1b[0m\x1b[?25h");
-        }
+        dispatch(&mut session, master.as_ref(), &mut handed_back, event);
     };
 
     session.record_pending(None);
@@ -975,6 +1083,113 @@ pub fn run(shell: Shell, login: bool, notice: Option<&str>) -> Result<i32, Strin
         let _ = std::fs::remove_dir_all(dir);
     }
     Ok(code)
+}
+
+/// Handles one event. If hiruzen's own code fails, the user must not lose
+/// their shell: each event is handled under a guard, and after a failure
+/// hiruzen stops drawing suggestions and only carries bytes between the
+/// terminal and the shell.
+fn dispatch(session: &mut Session, master: &dyn MasterPty, handed_back: &mut bool, event: Event) {
+    if *handed_back {
+        match event {
+            Event::Output(bytes) => session.write_terminal(&bytes),
+            Event::Input(bytes) => session.write_shell(&bytes),
+            Event::Resize(cols, rows) => {
+                let _ = master.resize(PtySize {
+                    rows,
+                    cols,
+                    pixel_width: 0,
+                    pixel_height: 0,
+                });
+            }
+            Event::Completed { .. } | Event::Exit(_) => {}
+            #[cfg(unix)]
+            Event::Direct(..) => {}
+        }
+        return;
+    }
+    let survived = match &event {
+        Event::Output(bytes) => guarded(|| session.on_output(bytes)),
+        Event::Input(bytes) => guarded(|| session.on_input(bytes)),
+        Event::Completed { version, result } => guarded(|| session.on_completed(*version, result.clone())),
+        Event::Resize(cols, rows) => guarded(|| session.on_resize(*cols, *rows, master)),
+        Event::Exit(_) => true,
+        #[cfg(unix)]
+        Event::Direct(..) => true,
+    };
+    if !survived {
+        *handed_back = true;
+        // Whatever was being handled still has to reach its destination.
+        match event {
+            Event::Output(bytes) => session.write_terminal(&bytes),
+            Event::Input(bytes) => session.write_shell(&bytes),
+            _ => {}
+        }
+        session.write_terminal(b"\x1b[0m\x1b[?25h");
+    }
+}
+
+/// Runs a command `hiruzen direct` asked for on the real terminal, then
+/// picks the session up again below whatever it left on screen. Returns the
+/// events that arrived meanwhile and were not handled yet.
+#[cfg(unix)]
+fn run_direct(
+    session: &mut Session,
+    master: &dyn MasterPty,
+    inbox: &Receiver<Event>,
+    gate: &InputGate,
+    handed_back: &mut bool,
+    request: crate::direct::Request,
+    mut reply: std::os::unix::net::UnixStream,
+) -> Vec<Event> {
+    use std::ffi::OsString;
+    use std::os::unix::ffi::OsStringExt;
+
+    // The shell echoed the command's line ending just before asking; it
+    // belongs on screen before the command starts.
+    let mut later = Vec::new();
+    let deadline = std::time::Instant::now() + Duration::from_millis(60);
+    while let Some(left) = deadline.checked_duration_since(std::time::Instant::now()) {
+        match inbox.recv_timeout(left.min(Duration::from_millis(15))) {
+            Ok(Event::Output(bytes)) => dispatch(session, master, handed_back, Event::Output(bytes)),
+            Ok(other) => later.push(other),
+            Err(_) => break,
+        }
+    }
+    let erase = session.erase();
+    session.write_terminal(erase.as_bytes());
+
+    gate.pause();
+    let os = |bytes: Vec<u8>| OsString::from_vec(bytes);
+    let args: Vec<OsString> = request.args.into_iter().map(os).collect();
+    let env: Vec<(OsString, OsString)> = request.env.into_iter().map(|(k, v)| (os(k), os(v))).collect();
+    let result = crate::term::foreground::run(
+        &PathBuf::from(os(request.program)),
+        &os(request.name),
+        &args,
+        &PathBuf::from(os(request.cwd)),
+        &env,
+    );
+    // The command may have left the cursor anywhere; ask where.
+    let (position, typeahead) = crate::term::foreground::query_cursor(Duration::from_millis(500));
+    if !*handed_back && !guarded(|| session.restart_screen(position)) {
+        *handed_back = true;
+    }
+    gate.resume();
+    session.write_shell(&typeahead);
+
+    let answer = match result {
+        Ok(status) => crate::direct::Reply { status, error: None },
+        Err(error) => crate::direct::Reply {
+            status: 126,
+            error: Some(error),
+        },
+    };
+    if let Ok(mut line) = serde_json::to_vec(&answer) {
+        line.push(b'\n');
+        let _ = reply.write_all(&line);
+    }
+    later
 }
 
 #[cfg(test)]

@@ -577,6 +577,7 @@ pub fn tips() -> Result<i32, String> {
         "A command typed with a space in front is not remembered.",
         "`hiruzen learn <command>` teaches hiruzen a tool it has no suggestions for, by reading its --help.",
         "`hiruzen ssh host` keeps suggestions working in a remote shell, with nothing installed there.",
+        "`hiruzen settings terminal.directCommands claude,codex` runs those commands straight on the terminal, so multiplexers that track agents see them.",
         "`hiruzen theme --list` previews the colour themes; `hiruzen theme nord` picks one.",
         "`hiruzen settings keys.accept \"tab,ctrl+y\"` changes which keys accept a suggestion.",
         "`hiruzen settings autocomplete.disableForCommands ssh,mysql` turns suggestions off for chosen commands.",

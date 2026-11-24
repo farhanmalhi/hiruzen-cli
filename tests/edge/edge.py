@@ -281,6 +281,56 @@ def _():
         expect("cherry-pick" in t.text(), "no dropdown after the clear:\n" + t.text()[-300:])
     finally: t.close()
 
+@case("start: output already on screen is kept, not cleared")
+def _():
+    t = Term(["sh", "-c", f"echo before-hiruzen; exec {H} --shell zsh"])
+    try:
+        expect("before-hiruzen" in t.text(), "the screen was cleared:\n" + t.text())
+        t.type("git ch", 0.8); expect("cherry-pick" in t.text(), "no dropdown:\n" + t.text())
+    finally: t.close()
+
+# A stand-in for a coding agent: reports whether it holds the outer terminal
+# as its foreground process group, reads a line, exits with status 7.
+AGENT_DIR = "/tmp/direct-bin"
+os.makedirs(AGENT_DIR, exist_ok=True)
+with open(AGENT_DIR + "/fakeagent", "w") as f:
+    f.write(f"""#!{sys.executable}
+import os, sys
+fd = os.open("/dev/tty", os.O_RDWR)
+# Handed over, it runs without the session's socket in its environment.
+print("AGENT direct=%s fg=%s foo=%s cwd=%s args=%s" % ("HIRUZEN_DIRECT_SOCKET" not in os.environ,
+      os.tcgetpgrp(fd) == os.getpgrp(), os.environ.get("FOO"),
+      os.path.basename(os.getcwd()), sys.argv[1:]))
+print("AGENT read=" + sys.stdin.readline().strip())
+sys.exit(7)
+""")
+os.chmod(AGENT_DIR + "/fakeagent", 0o755)
+
+for shell in ["bash", "zsh", "fish"]:
+    @case(f"{shell}: a direct command holds the real terminal and the shell carries on")
+    def _():
+        cfg = f"/tmp/cfg-direct-{shell}"
+        os.makedirs(cfg, exist_ok=True)
+        with open(cfg + "/settings.json", "w") as f: f.write('{"terminal.directCommands": ["fakeagent"]}')
+        env = {"HIRUZEN_CONFIG_DIR": cfg, "PATH": AGENT_DIR + ":" + os.environ["PATH"]}
+        t = session(shell, env=env)
+        try:
+            os.makedirs("/tmp/direct-work", exist_ok=True)
+            setup = "set -x FOO bar; cd /tmp/direct-work" if shell == "fish" else "export FOO=bar; cd /tmp/direct-work"
+            t.type(setup, 0.2); t.enter(1.0)
+            t.type("fakeagent one 'two words'", 0.2); t.enter(2.0)
+            t.type("typed-here", 0.2); t.enter(1.5)
+            t.type("echo status=$status" if shell == "fish" else "echo status=$?", 0.2); t.enter(1.5)
+            text = t.text()
+            expect("AGENT direct=True fg=True foo=bar cwd=direct-work args=['one', 'two words']" in text, "not run directly:\n" + text[-600:])
+            expect("AGENT read=typed-here" in text, "the agent did not get the keyboard:\n" + text[-400:])
+            expect("status=7" in text, "exit status lost:\n" + text[-400:])
+            # In a pipeline it stays inside hiruzen.
+            t.type("echo x | fakeagent piped | cat", 0.2); t.enter(2.0)
+            expect("AGENT direct=False" in t.text(), "a pipeline was taken out of hiruzen:\n" + t.text()[-400:])
+            responsive(t, shell)
+        finally: t.close()
+
 @case("cursor: suggestions at a gap between words, none inside a word")
 def _():
     t = Term([H, "--shell", "zsh"])

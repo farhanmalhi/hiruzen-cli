@@ -22,6 +22,11 @@ pub struct Anchor {
 
 pub struct Screen {
     parser: vt100::Parser,
+    /// Rows at the top of the screen holding text that was there before
+    /// hiruzen started watching: output from before the session, or from a
+    /// command run straight on the terminal. The model has them blank, so
+    /// nothing may be drawn over them that would later be put back as blanks.
+    foreign: u16,
 }
 
 fn non_zero(value: u16) -> NonZeroU16 {
@@ -32,11 +37,50 @@ impl Screen {
     pub fn new(cols: u16, rows: u16) -> Self {
         Screen {
             parser: vt100::Parser::new(non_zero(rows), non_zero(cols), SCROLLBACK),
+            foreign: 0,
         }
     }
 
     pub fn feed(&mut self, bytes: &[u8]) {
+        let before = self.parser.screen().scrollback_len();
         self.parser.process(bytes);
+        if self.foreign > 0 {
+            if clears_screen(bytes) {
+                self.foreign = 0;
+            } else {
+                // Each line scrolled off the top takes one unseen row with it.
+                let scrolled = self.parser.screen().scrollback_len().saturating_sub(before);
+                self.foreign = self.foreign.saturating_sub(u16::try_from(scrolled).unwrap_or(u16::MAX));
+            }
+        }
+    }
+
+    /// Starts the model with the cursor where the terminal reported it,
+    /// taking the rows above as holding text the model never saw. Returns
+    /// what to write to the terminal so that both continue from the start of
+    /// a fresh line.
+    pub fn start_at(&mut self, row: u16, col: u16) -> &'static [u8] {
+        let (cols, rows) = self.size();
+        let (row, col) = (row.min(rows - 1), col.min(cols - 1));
+        self.parser.process(format!("\x1b[{};{}H", row + 1, col + 1).as_bytes());
+        // The cursor's own row is unseen too when text precedes it.
+        self.foreign = row + u16::from(col > 0);
+        if col > 0 {
+            self.feed(b"\r\n");
+            b"\r\n"
+        } else {
+            b""
+        }
+    }
+
+    /// How many rows at the top hold text the model never saw.
+    pub fn foreign_rows(&self) -> u16 {
+        self.foreign
+    }
+
+    /// The unseen rows were overwritten, for example by a full repaint.
+    pub fn forget_foreign(&mut self) {
+        self.foreign = 0;
     }
 
     pub fn resize(&mut self, cols: u16, rows: u16) {
@@ -187,6 +231,12 @@ impl Screen {
         out.extend_from_slice(self.parser.screen().contents_formatted().as_bytes());
         out
     }
+}
+
+/// True when output erases the whole screen.
+pub fn clears_screen(data: &[u8]) -> bool {
+    let has = |needle: &[u8]| data.windows(needle.len()).any(|window| window == needle);
+    has(b"\x1b[2J") || has(b"\x1b[3J") || has(b"\x1b[H\x1b[J")
 }
 
 /// The SGR parameters for a cell, each prefixed with `;`. Empty for a cell

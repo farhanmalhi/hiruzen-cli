@@ -72,6 +72,9 @@ pub struct Request<'a> {
     pub command_row: usize,
     /// Column where the word being completed starts.
     pub anchor_col: usize,
+    /// First row the dropdown may cover. The rows above it hold text that
+    /// could not be put back afterwards.
+    pub min_top: usize,
     pub style: Style,
 }
 
@@ -126,6 +129,7 @@ pub fn layout(request: &Request) -> Option<Layout> {
         cursor_row,
         command_row,
         anchor_col,
+        min_top,
         style,
     } = *request;
     let theme = style.theme;
@@ -135,7 +139,7 @@ pub fn layout(request: &Request) -> Option<Layout> {
         return None;
     }
     let below = rows.saturating_sub(cursor_row + 1);
-    let above = command_row;
+    let above = command_row.saturating_sub(min_top);
     let room = below.max(above);
     if room == 0 {
         return None;
@@ -305,6 +309,7 @@ mod tests {
             cursor_row,
             command_row: cursor_row,
             anchor_col,
+            min_top: 0,
             style: Style::default(),
         }
     }
@@ -343,6 +348,18 @@ mod tests {
         let mut req = request(&list, 23, 0);
         req.command_row = 21;
         assert_eq!(layout(&req).unwrap().top, 19);
+    }
+
+    #[test]
+    fn stays_off_rows_it_could_not_put_back() {
+        let list = items(&["a", "b", "c", "d", "e"]);
+        let mut req = request(&list, 23, 0);
+        // Rows 0 to 19 hold output from before the session: only three fit.
+        req.min_top = 20;
+        let layout = layout(&req).unwrap();
+        assert_eq!((layout.top, layout.rows.len()), (20, 3));
+        req.min_top = 23;
+        assert!(super::layout(&req).is_none());
     }
 
     #[test]
@@ -407,6 +424,7 @@ mod tests {
             cursor_row: 0,
             command_row: 0,
             anchor_col: 2,
+            min_top: 0,
             style: Style::default(),
         };
         let layout = layout(&req).unwrap();
@@ -454,6 +472,7 @@ mod tests {
             cursor_row: 0,
             command_row: 0,
             anchor_col: 0,
+            min_top: 0,
             style: Style::default(),
         };
         assert!(layout(&req).is_none());

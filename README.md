@@ -31,6 +31,7 @@ Website: [hiruzen.farhanmalhi.com](https://hiruzen.farhanmalhi.com/)
 - [Usage](#usage)
 - [Settings](#settings)
 - [Remote shells over SSH](#remote-shells-over-ssh)
+- [Commands that need the real terminal](#commands-that-need-the-real-terminal)
 - [Scripts](#scripts)
 - [Plugins](#plugins)
 - [Use with Claude Code](#use-with-claude-code)
@@ -171,6 +172,7 @@ hiruzen scripts <ACTION>       Manage saved scripts: list, new, edit, show, remo
 hiruzen plugins <ACTION>       Manage shell plugins: list, add, remove, update
 hiruzen evaluate               Measure suggestion quality against your own history
 hiruzen ssh [SSH ARGUMENTS]    Connect with ssh and keep suggestions working remotely
+hiruzen direct <COMMAND...>    Run a command straight on the terminal, outside hiruzen
 hiruzen learn <COMMAND>        Teach hiruzen a tool it has no spec for, from its --help
 hiruzen update                 Check whether a newer version has been released
 hiruzen tips                   Show things worth knowing
@@ -253,6 +255,7 @@ hiruzen settings open                         # open the file in your editor
 | `prompt.showHost` | `false` | Start that prompt with your user and machine name: `you@host my-project (main) %` |
 | `prompt.directoryLength` | `24` | Longest directory name the prompt shows, from 4 to 80. A longer name loses its middle: `my-very-long…oject-name-2` |
 | `prompt.branchLength` | `80` | Longest branch name the prompt shows, from 4 to 80. The branch is shown whole unless the prompt would fill more than three quarters of the window; then it loses its middle: `feature/long-b…for-user-auth` |
+| `terminal.directCommands` | none | Commands that run straight on your terminal instead of inside hiruzen, for example `claude,codex`. See [Commands that need the real terminal](#commands-that-need-the-real-terminal). zsh, bash and fish on macOS and Linux; applies to new sessions |
 | `updates.check` | `true` | Look for a new version once a day. When there is one, the next terminal you open asks `Update now? [Y/n]` and, if you agree, installs it the way hiruzen was installed (Homebrew, the installer script or cargo). A version you decline is not offered again; `hiruzen update` installs it whenever you like. `false` stops the checks |
 
 `hiruzen theme --list` previews every theme, and `hiruzen theme nord` selects
@@ -303,6 +306,39 @@ Remote bash, zsh and fish are supported; a machine with another login shell,
 or without `mktemp` and `base64`, gets an ordinary login. Anything that is
 not an interactive login (a remote command, a tunnel, `-N`, `-T`) is passed
 to `ssh` unchanged, as is every call made outside a hiruzen session.
+
+## Commands that need the real terminal
+
+hiruzen runs your shell inside a pseudo-terminal of its own, so to the
+terminal around it, hiruzen is the program in the foreground the whole time.
+Most tools do not care. Some do: terminal multiplexers that track coding
+agents, such as herdr, work out what runs in each pane from its foreground
+process, and with hiruzen in between they never see the agent, so its status
+and notifications are missing.
+
+Name those commands in `terminal.directCommands`:
+
+```sh
+hiruzen settings terminal.directCommands claude,codex
+```
+
+In new sessions, typing `claude` then pauses hiruzen and runs Claude Code
+straight on your terminal as its foreground process. When it exits, hiruzen
+picks up again below whatever it left on screen. The shell is the same one
+you typed into, so variables you exported, an activated virtualenv and the
+current directory all carry over both ways, and `$?` is the command's exit
+status. Arguments, aliases that expand to the command, and `cd dir && claude`
+all work.
+
+To do the same once, for any command, put `hiruzen direct` in front of it:
+`hiruzen direct vim notes.md`.
+
+The command stays inside hiruzen when it cannot hold the terminal on its own:
+in a pipeline (`claude -p "..." | jq`), with its input or output redirected,
+or as a background job. A shell function of your own with the same name is
+left alone. Ctrl+Z does not suspend a command running this way, because
+there is no job control outside the shell to bring it back; the command
+carries on. This works in zsh, bash and fish on macOS and Linux.
 
 ## Scripts
 
@@ -483,6 +519,13 @@ What has been tested on each platform, and what has not, is in
 - Aliases complete as the commands they stand for in zsh and bash. In fish
   and PowerShell, aliases and functions are suggested by name only. cmd
   reports neither, and no exit statuses.
+- Output that was on screen before hiruzen started, or that a
+  [direct command](#commands-that-need-the-real-terminal) left behind, stays
+  there, but hiruzen never saw it, so the dropdown does not draw over it.
+  With such output filling the screen above a prompt at the bottom, the
+  dropdown stays hidden until a few new lines have scrolled it up. Resizing
+  the window redraws the screen from what hiruzen saw, so that output is
+  cleared then.
 - Nushell, Xonsh and other shells not listed above are not supported.
 
 ## Troubleshooting

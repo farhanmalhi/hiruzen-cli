@@ -87,3 +87,15 @@ else
 	}
 	PROMPT_COMMAND=__hiruzen_prompt_command
 fi
+
+# Commands named in the terminal.directCommands setting run straight on the
+# real terminal, outside hiruzen, so tools that watch the terminal's
+# foreground process see them. A function of your own with the same name is
+# left alone. hiruzen has checked the names, so they need no quoting.
+if [[ -n "${HIRUZEN_DIRECT_SOCKET:-}" && -z "${HIRUZEN_REMOTE:-}" ]]; then
+	for __hiruzen_name in ${HIRUZEN_DIRECT:-}; do
+		builtin declare -F "$__hiruzen_name" >/dev/null && continue
+		builtin eval "function $__hiruzen_name { command \"\${HIRUZEN_EXE:-hiruzen}\" direct -- $__hiruzen_name \"\$@\"; }"
+	done
+	builtin unset __hiruzen_name
+fi

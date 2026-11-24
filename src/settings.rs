@@ -134,6 +134,12 @@ pub const DEFINITIONS: &[Definition] = &[
         help: "Longest branch name the prompt shows; a narrow window shortens it sooner",
     },
     Definition {
+        key: "terminal.directCommands",
+        kind: ValueKind::List,
+        default: "",
+        help: "Commands run straight on your terminal, outside hiruzen, so tools that watch the terminal see them, for example: claude,codex (new sessions; zsh, bash and fish)",
+    },
+    Definition {
         key: "updates.check",
         kind: ValueKind::Bool,
         default: "true",
@@ -242,6 +248,7 @@ pub struct Settings {
     pub prompt_directory_length: usize,
     pub prompt_branch_length: usize,
     pub update_check: bool,
+    pub direct_commands: Vec<String>,
 }
 
 /// The byte sequences bound to each dropdown action.
@@ -308,6 +315,10 @@ impl Settings {
             prompt_directory_length: value("prompt.directoryLength").as_u64().unwrap_or(24) as usize,
             prompt_branch_length: value("prompt.branchLength").as_u64().unwrap_or(80) as usize,
             update_check: value("updates.check").as_bool().unwrap_or(true),
+            direct_commands: value("terminal.directCommands")
+                .as_array()
+                .map(|items| items.iter().filter_map(|i| i.as_str().map(str::to_string)).collect())
+                .unwrap_or_default(),
         }
     }
 

@@ -180,3 +180,17 @@ if [[ -z $HIRUZEN_REMOTE ]]; then
 		builtin printf '\e]7391;NAMES;%s\a' "${(j: :)${(@k)functions:#[_.+-]*}}"
 	} > /dev/tty
 fi
+
+# Commands named in the terminal.directCommands setting run straight on the
+# real terminal, outside hiruzen, so tools that watch the terminal's
+# foreground process see them. A function of your own with the same name is
+# left alone. hiruzen has checked the names, so they need no quoting.
+if [[ -n $HIRUZEN_DIRECT_SOCKET && -z $HIRUZEN_REMOTE ]]; then
+	() {
+		builtin local name
+		for name in ${=HIRUZEN_DIRECT}; do
+			(( ${+functions[$name]} )) && continue
+			builtin eval "function $name { command \"\${HIRUZEN_EXE:-hiruzen}\" direct -- $name \"\$@\"; }"
+		done
+	}
+fi

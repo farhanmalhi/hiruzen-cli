@@ -265,6 +265,10 @@ pub struct Launch {
     pub env: Vec<(String, String)>,
     /// Temporary directory holding integration scripts; removed on exit.
     pub scratch: Option<PathBuf>,
+    /// Where `hiruzen direct` asks the session to run a command straight on
+    /// the real terminal, for shells whose integration supports it.
+    #[cfg(unix)]
+    pub direct_listener: Option<std::os::unix::net::UnixListener>,
 }
 
 impl Shell {
@@ -294,8 +298,36 @@ impl Shell {
             Ok(path)
         };
 
+        let settings = crate::settings::Settings::load();
         let mut args: Vec<String> = Vec::new();
         let mut env: Vec<(String, String)> = vec![("HIRUZEN".to_string(), "1".to_string())];
+
+        // The socket lives in the private scratch directory, so only this
+        // user can connect to it.
+        #[cfg(unix)]
+        let direct_listener = if self.is_posix() {
+            let path = scratch.join("direct.sock");
+            std::os::unix::net::UnixListener::bind(&path).ok().inspect(|_| {
+                let names: Vec<&str> = settings
+                    .direct_commands
+                    .iter()
+                    .map(String::as_str)
+                    .filter(|name| crate::direct::valid_name(name))
+                    .collect();
+                let exe = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("hiruzen"));
+                env.push((
+                    crate::direct::SOCKET_VARIABLE.to_string(),
+                    path.to_string_lossy().into_owned(),
+                ));
+                env.push((crate::direct::COMMANDS_VARIABLE.to_string(), names.join(" ")));
+                env.push((
+                    crate::direct::EXE_VARIABLE.to_string(),
+                    exe.to_string_lossy().into_owned(),
+                ));
+            })
+        } else {
+            None
+        };
         if login {
             env.push(("HIRUZEN_LOGIN".to_string(), "1".to_string()));
         }
@@ -313,7 +345,6 @@ impl Shell {
                     .unwrap_or_else(|| PathBuf::from("/"));
                 env.push(("HIRUZEN_USER_ZDOTDIR".to_string(), user.to_string_lossy().into_owned()));
                 env.push(("ZDOTDIR".to_string(), scratch.to_string_lossy().into_owned()));
-                let settings = crate::settings::Settings::load();
                 if settings.prompt {
                     env.push(("HIRUZEN_PROMPT".to_string(), "1".to_string()));
                     if settings.prompt_host {
@@ -375,6 +406,8 @@ impl Shell {
             args,
             env,
             scratch: Some(scratch),
+            #[cfg(unix)]
+            direct_listener,
         })
     }
 }

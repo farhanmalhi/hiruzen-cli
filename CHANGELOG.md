@@ -6,6 +6,26 @@ All notable changes to hiruzen are recorded here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- **Commands that need the real terminal.** The new
+  `terminal.directCommands` setting names commands, such as `claude,codex`,
+  that run straight on your terminal as its foreground process instead of
+  inside hiruzen's pseudo-terminal. Terminal multiplexers that track coding
+  agents by the foreground process (herdr, for example) now see the agent.
+  The shell you typed into carries on unchanged: exported variables, the
+  current directory and the exit status all come through. `hiruzen direct
+  COMMAND` does the same for a single run. zsh, bash and fish on macOS and
+  Linux.
+
+### Changed
+
+- **Starting hiruzen no longer clears the screen.** It asks the terminal
+  where the cursor is and starts below what is already there, so the output
+  of whatever ran before stays readable. The dropdown never draws over that
+  output, because hiruzen could not put it back. On Windows, and in a
+  terminal that does not answer, the screen is still cleared.
+
 ## [0.2.1] - 2026-11-22
 
 ### Added

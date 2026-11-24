@@ -539,6 +539,7 @@ version = "0.2.1"
 dependencies = [
  "boa_engine",
  "crossterm",
+ "libc",
  "portable-pty",
  "ruzstd",
  "serde",

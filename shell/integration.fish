@@ -32,3 +32,19 @@ function fish_prompt
 	printf '%s' (string join \n $__hiruzen_lines)
 	printf '\e]7391;PE\a'
 end
+
+# Commands named in the terminal.directCommands setting run straight on the
+# real terminal, outside hiruzen, so tools that watch the terminal's
+# foreground process see them. A function of your own with the same name is
+# left alone.
+if set -q HIRUZEN_DIRECT_SOCKET; and not set -q HIRUZEN_REMOTE
+	for __hiruzen_name in (string split -n ' ' -- "$HIRUZEN_DIRECT")
+		functions -q -- $__hiruzen_name; and continue
+		function $__hiruzen_name --inherit-variable __hiruzen_name
+			set -l exe hiruzen
+			set -q HIRUZEN_EXE; and set exe $HIRUZEN_EXE
+			command $exe direct -- $__hiruzen_name $argv
+		end
+	end
+	set -e __hiruzen_name
+end

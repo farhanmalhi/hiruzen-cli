@@ -1,6 +1,7 @@
 //! hiruzen: dropdown autocomplete for the terminal.
 
 mod commands;
+mod direct;
 mod engine;
 mod keys;
 mod learn;
@@ -34,6 +35,7 @@ USAGE:
     hiruzen scripts <ACTION>       Manage saved scripts: list, new, edit, show, remove, dir
     hiruzen plugins <ACTION>       Manage shell plugins: list, add, remove, update
     hiruzen ssh [SSH ARGUMENTS]    Connect with ssh and keep suggestions working remotely
+    hiruzen direct <COMMAND...>    Run a command straight on the terminal, outside hiruzen
     hiruzen learn <COMMAND>        Teach hiruzen a tool it has no spec for, from its --help
     hiruzen update [-y]            Check for a newer version and install it (-y: without asking)
     hiruzen tips                   Show things worth knowing
@@ -57,8 +59,15 @@ KEYS (while suggestions are showing):
 ";
 
 fn main() -> ExitCode {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    match run(&args) {
+    let raw: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+    // A command handed on by `direct` may have arguments that are not UTF-8.
+    let result = if raw.first().is_some_and(|first| first == "direct") {
+        direct::run(&raw[1..])
+    } else {
+        let args: Vec<String> = raw.iter().map(|arg| arg.to_string_lossy().into_owned()).collect();
+        run(&args)
+    };
+    match result {
         Ok(code) => ExitCode::from(code.clamp(0, 255) as u8),
         Err(message) => {
             eprintln!("hiruzen: {message}");

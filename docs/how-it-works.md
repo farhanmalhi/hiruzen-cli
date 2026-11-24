@@ -7,6 +7,16 @@ you are typing. It draws the dropdown over the shell's output and restores
 what was underneath before the shell prints again, so the shell never sees a
 changed screen.
 
+hiruzen starts below whatever is already on screen and leaves it there. It
+never saw that text, so it cannot put it back, and the dropdown does not
+draw over it.
+
+A command named in `terminal.directCommands` does not run inside the
+pseudo-terminal. The shell hands it to hiruzen, which stops reading the
+keyboard, gives the real terminal to the command as its foreground process,
+and waits. When the command ends, hiruzen takes the terminal back, tells the
+shell the exit status, and carries on below what the command left on screen.
+
 Suggestions come from three sources, ranked together:
 
 | Source | What it gives | Example |

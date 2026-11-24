@@ -265,9 +265,8 @@ fn restart() {
 
 /// Called as a session starts. Offers a release found by an earlier check,
 /// and once a day looks for a newer one in the background, so that starting
-/// a terminal never waits for the network. The session begins by clearing
-/// the screen, so what the user should still be able to read afterwards is
-/// returned for the session to show.
+/// a terminal never waits for the network. What the user should be able to
+/// read once the session has started is returned for the session to show.
 pub fn offer() -> Option<String> {
     if std::env::var_os(UPDATED_VARIABLE).is_some() || !Settings::load().update_check {
         return None;

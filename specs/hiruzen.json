@@ -16,7 +16,7 @@
         { "name": "docs", "description": "Describe every setting" },
         { "name": "open", "description": "Open the settings file" }
       ],
-      "options": [ { "name": ["-d", "--delete"], "description": "Return a setting to its default", "args": { "name": "key", "suggestions": ["autocomplete.disable", "autocomplete.theme", "autocomplete.height", "autocomplete.descriptions", "autocomplete.fuzzySearch", "autocomplete.history", "autocomplete.disableForCommands", "autocomplete.onlineSuggestions", "keys.accept", "keys.next", "keys.previous", "keys.dismiss", "autocomplete.enterAccepts", "prompt.enable", "prompt.showHost", "prompt.directoryLength", "prompt.branchLength", "updates.check"] } } ],
+      "options": [ { "name": ["-d", "--delete"], "description": "Return a setting to its default", "args": { "name": "key", "suggestions": ["autocomplete.disable", "autocomplete.theme", "autocomplete.height", "autocomplete.descriptions", "autocomplete.fuzzySearch", "autocomplete.history", "autocomplete.disableForCommands", "autocomplete.onlineSuggestions", "keys.accept", "keys.next", "keys.previous", "keys.dismiss", "autocomplete.enterAccepts", "prompt.enable", "prompt.showHost", "prompt.directoryLength", "prompt.branchLength", "terminal.directCommands", "updates.check"] } } ],
       "args": [
         { "name": "key", "isOptional": true, "suggestions": [
           { "name": "autocomplete.disable", "description": "Turn suggestions off" },
@@ -36,12 +36,14 @@
           { "name": "prompt.showHost", "description": "Start the prompt with you@host" },
           { "name": "prompt.directoryLength", "description": "Longest directory name the prompt shows" },
           { "name": "prompt.branchLength", "description": "Longest branch name the prompt shows" },
+          { "name": "terminal.directCommands", "description": "Commands run straight on your terminal, outside hiruzen" },
           { "name": "updates.check", "description": "Look for a new version once a day and offer to install it" }
         ] },
         { "name": "value", "isOptional": true, "suggestions": ["true", "false"] }
       ] },
     { "name": "theme", "description": "Show or change the dropdown's colours", "options": [ { "name": ["-l", "--list"], "description": "Preview every theme" } ], "args": { "name": "name", "isOptional": true, "suggestions": ["dark", "light", "dracula", "nord", "gruvbox", "solarized"] } },
     { "name": "ssh", "description": "Connect with ssh and keep suggestions working in the remote shell", "loadSpec": "ssh" },
+    { "name": "direct", "description": "Run a command straight on the terminal, outside hiruzen", "args": { "name": "command", "isCommand": true } },
     { "name": ["run", "r"], "description": "Run a saved script", "options": [ { "name": ["-p", "--print"], "description": "Print the command instead of running it" } ], "args": { "name": "script", "isOptional": true, "generators": { "script": ["hiruzen", "scripts", "list", "--names"], "splitOn": "\n" } } },
     { "name": "scripts", "description": "Manage saved scripts", "subcommands": [
       { "name": "list", "description": "List saved scripts" },
