@@ -6,6 +6,8 @@ All notable changes to hiruzen are recorded here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-24
+
 ### Added
 
 - **Commands that need the real terminal.** The new
@@ -226,7 +228,8 @@ command can be, as you type it.
   suggestions for them come from your history and the current directory.
 - Nushell, Xonsh and other shells not listed above are not supported.
 
-[Unreleased]: https://github.com/farhanmalhi/hiruzen-cli/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/farhanmalhi/hiruzen-cli/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/farhanmalhi/hiruzen-cli/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/farhanmalhi/hiruzen-cli/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/farhanmalhi/hiruzen-cli/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/farhanmalhi/hiruzen-cli/releases/tag/v0.1.0
